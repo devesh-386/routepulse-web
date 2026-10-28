@@ -53,3 +53,13 @@ Plan: `C:\Users\dev\.claude\plans\giggly-weaving-kahan.md`
 | Labels | Google Maps hand-off says "Route chosen to avoid simulated flooding, not real conditions"; "No flood risk" → "No simulated risk". |
 | Checks | 47 unit tests, tsc, eslint, `verify-ui.mjs` all pass. |
 | Deferred | Vulnerability ranking (`train.py`) waits: a training run is active in the dataset, so no dataset file was edited or rebuilt. |
+
+## P1 speed + test stability (2026-10-28)
+
+| Fix | Evidence |
+|---|---|
+| Reopen search off the render path | Keyed by (scenario, step, journey), cached, run after paint in ≤12 ms slices; bound by `manifest.hours` (was hardcoded 336). Card shows "Looking for when one reopens…" meanwhile. |
+| Skip doomed searches | If the fastest search finds no path, safer/shortest are skipped (same closed streets). Applied to `/` and `/ops`. |
+| Measured (headless Edge, hour step on `/`) | All-routes-cut: median 396 → 35 ms, worst 1,075 → 403 ms. Normal hour: median 207 → 111 ms. |
+| Click tolerance | Minor streets render under 1 px wide; clicks now accept a street within 6 px. This was the cause of the "flaky" street-click check (click points round to whole pixels and missed the hairline). |
+| Test gate | `verify-ui.mjs` waits for the actual reopening hour (not just the notice) and clicks only unambiguous on-canvas points. 5/5 consecutive full runs pass. |

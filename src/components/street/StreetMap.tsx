@@ -104,7 +104,13 @@ export default function StreetMap(p: Props) {
           paint: { "fill-color": "#3d9bff", "fill-opacity": 0.14, "fill-outline-color": "#3d9bff" } });
         m.addLayer({ id: "me-dot", type: "circle", source: "me", filter: ["==", ["geometry-type"], "Point"],
           paint: { "circle-radius": 7, "circle-color": "#3d9bff", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
-        m.on("click", "streets", (e) => { const f = e.features?.[0]; if (f?.id !== undefined) onSelect.current(Number(f.id)); });
+        // minor streets are under 1 px wide at city zoom, so a click also accepts a street within 6 px
+        m.on("click", (e) => {
+          const { x, y } = e.point, r = 6;
+          const f = m!.queryRenderedFeatures(e.point, { layers: ["streets"] })[0]
+            ?? m!.queryRenderedFeatures([[x - r, y - r], [x + r, y + r]], { layers: ["streets"] })[0];
+          if (f?.id !== undefined) onSelect.current(Number(f.id));
+        });
         m.on("mouseenter", "streets", () => { m!.getCanvas().style.cursor = "pointer"; });
         m.on("mouseleave", "streets", () => { m!.getCanvas().style.cursor = ""; });
         map.current = m;

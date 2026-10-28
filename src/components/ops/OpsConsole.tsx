@@ -209,7 +209,10 @@ export default function OpsConsole() {
     if (!streets || !graph || !state) return [];
     const na = nearestNode(graph, ...ends[0]), nb = nearestNode(graph, ...ends[1]);
     if (na === nb) return [];
-    return KINDS.map((k) => route(k.kind, streets, graph, state, na, nb)).filter((r): r is Route => r !== null);
+    // every kind avoids the same closed streets, so if the fastest search finds no path neither will the others
+    const fast = route("fastest", streets, graph, state, na, nb);
+    if (!fast) return [];
+    return KINDS.map((k) => (k.kind === "fastest" ? fast : route(k.kind, streets, graph, state, na, nb))).filter((r): r is Route => r !== null);
   }, [streets, graph, state, ends]);
 
   const selected = useMemo(() => {

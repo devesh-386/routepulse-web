@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { hourLabel, loadScenario, loadStatic, type ScenarioData, type StaticBundle } from "@/lib/bundle";
 import {
   BANDS, bandOf, buildGraph, loadStreets, loadStreetScenario, lowLyingLabel, nearestNode, PLACES, route,
-  streetName, streetRain, type Band, type Graph, type Route, type RouteKind, type Streets, type StreetScenario,
+  STEP_HOURS, streetName, streetRain, type Band, type Graph, type Route, type RouteKind, type Streets, type StreetScenario,
 } from "@/lib/streets";
 import { googleMapsUrl, inCoverage, metres, nearestStreet, useGeolocation, type GeoStatus } from "@/lib/geo";
 import Scrubber from "../Scrubber";
@@ -14,6 +14,8 @@ import StreetMap, { type Layers } from "./StreetMap";
 import "./street.css";
 
 const ME = "me";
+// "scenario|step|origin|destination" → first hour a route reopens, or -1 if none does
+const reopenCache = new Map<string, number>();
 const CHENNAI: [number, number] = [80.2707, 13.0827];
 
 const KINDS: { kind: RouteKind; title: string; note: string }[] = [
@@ -93,17 +95,42 @@ export default function StreetDashboard() {
     if (!streets || !graph || !state || !ends[0] || !ends[1]) return [];
     const na = nearestNode(graph, ...ends[0]), nb = nearestNode(graph, ...ends[1]);
     if (na === nb) return [];
-    return KINDS.map((k) => route(k.kind, streets, graph, state, na, nb)).filter((r): r is Route => r !== null);
+    // every kind avoids the same closed streets, so if the fastest search finds no path neither will the others
+    const fast = route("fastest", streets, graph, state, na, nb);
+    if (!fast) return [];
+    return KINDS.map((k) => (k.kind === "fastest" ? fast : route(k.kind, streets, graph, state, na, nb))).filter((r): r is Route => r !== null);
   }, [streets, graph, state, ends]);
 
-  // when every route is cut, find the next 3-hour step at which one opens again
-  const reopens = useMemo(() => {
-    if (routes.length || !streets || !graph || !live || !ends[0] || !ends[1]) return null;
+  // when every route is cut, find the next 3-hour step at which one opens again. That can take ~100 route
+  // searches, so it runs after paint in short slices, once per (scenario, step, journey), and is cached.
+  const step = live ? live.stepOf(h) : -1;
+  const reopenKey = useMemo(() => (!routes.length && live && graph && ends[0] && ends[1]
+    && nearestNode(graph, ...ends[0]) !== nearestNode(graph, ...ends[1]) ? `${live.id}|${step}|${ends[0]}|${ends[1]}` : null),
+  [routes, live, graph, ends, step]);
+  const [reopenFound, setReopenFound] = useState<{ key: string; hour: number } | null>(null);
+  useEffect(() => {
+    if (!reopenKey || !streets || !graph || !live || !bundle || !ends[0] || !ends[1]) return;
     const na = nearestNode(graph, ...ends[0]), nb = nearestNode(graph, ...ends[1]);
-    if (na === nb) return null;
-    for (let k = live.stepOf(h) + 1; k * 3 < 336; k++) if (route("fastest", streets, graph, live.state(k), na, nb)) return k * 3;
-    return -1;
-  }, [routes, streets, graph, live, h, ends]);
+    const steps = Math.ceil(bundle.manifest.hours / STEP_HOURS);
+    let k = step + 1, timer = 0;
+    const slice = () => {
+      const hit = reopenCache.get(reopenKey);
+      if (hit !== undefined) { setReopenFound({ key: reopenKey, hour: hit }); return; }
+      const t0 = performance.now();
+      for (; k < steps && performance.now() - t0 < 12; k++) {
+        if (route("fastest", streets, graph, live.state(k), na, nb)) {
+          reopenCache.set(reopenKey, k * STEP_HOURS);
+          setReopenFound({ key: reopenKey, hour: k * STEP_HOURS });
+          return;
+        }
+      }
+      if (k >= steps) { reopenCache.set(reopenKey, -1); setReopenFound({ key: reopenKey, hour: -1 }); return; }
+      timer = window.setTimeout(slice, 0);
+    };
+    timer = window.setTimeout(slice, 0);
+    return () => clearTimeout(timer);
+  }, [reopenKey, streets, graph, live, bundle, ends, step]);
+  const reopens = reopenFound?.key === reopenKey ? reopenFound.hour : null;
 
   // a picked street wins; then the street the device is on; then the riskiest street on the route
   const selected = useMemo(() => {
@@ -257,6 +284,7 @@ export default function StreetDashboard() {
           <RouteCard routes={routes} active={activeRoute} setActive={(k) => { setActiveRoute(k); setPicked(null); }}
                      reopens={reopens === null ? null : reopens < 0 ? "not before the scenario ends" : hourLabel(bundle.manifest, reopens)}
                      onJump={reopens !== null && reopens >= 0 ? () => { setPlaying(false); setHour(reopens); } : undefined}
+                     searching={reopenKey !== null && reopens === null}
                      from={placeName(from)} to={placeName(to)}
                      noEndpoint={!ends[0] || !ends[1]
                        ? gps === "tracking" ? "Your location is outside the simulated Chennai streets, so there is no route from it. Pick a place instead."
@@ -342,9 +370,9 @@ function StreetCard({ streets, i, state, rain, hour, sim, manifest, scenario, on
 
 // ---------------------------------------------------------------- route comparison
 
-function RouteCard({ routes, active, setActive, from, to, reopens, onJump, googleUrl, noEndpoint }: {
+function RouteCard({ routes, active, setActive, from, to, reopens, onJump, searching, googleUrl, noEndpoint }: {
   routes: Route[]; active: number; setActive: (k: number) => void; from: string; to: string;
-  reopens: string | null; onJump?: () => void; googleUrl: string | null; noEndpoint: string | null;
+  reopens: string | null; onJump?: () => void; searching: boolean; googleUrl: string | null; noEndpoint: string | null;
 }) {
   const risks = routes.map((r) => r.meanP);
   const lo = Math.min(...risks), hi = Math.max(...risks);
@@ -368,7 +396,8 @@ function RouteCard({ routes, active, setActive, from, to, reopens, onJump, googl
           <p>Every route between these places crosses a closed street at this hour.
             {reopens && <> The simulation reopens one {onJump
               ? <button type="button" className="sv-link" onClick={onJump}>at {reopens}</button>
-              : reopens}.</>}</p>
+              : reopens}.</>}
+            {searching && <> Looking for when one reopens…</>}</p>
         </div>
       )}
       <div className="sv-routes" role="radiogroup" aria-label="Routes">

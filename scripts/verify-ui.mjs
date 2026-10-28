@@ -305,9 +305,19 @@ async function verifyStreets(browser) {
   // click a street the map actually rendered, at the screen position of one of its vertices
   const target = await page.evaluate((cur) => {
     const m = window.__rpStreetMap;
-    const f = m.queryRenderedFeatures({ layers: ["streets"] }).find((x) => String(x.id) !== cur && x.geometry.type === "LineString");
+    // the point must land on the map canvas itself, not under the legend, badge, labels or controls
+    const canvas = m.getCanvas(), rect = canvas.getBoundingClientRect();
+    let f, pt;
+    for (const x of m.queryRenderedFeatures({ layers: ["streets"] })) {
+      if (String(x.id) === cur || x.geometry.type !== "LineString") continue;
+      const p = m.project(x.geometry.coordinates[Math.floor(x.geometry.coordinates.length / 2)]);
+      if (p.x < 20 || p.y < 20 || p.x > rect.width - 20 || p.y > rect.height - 20) continue;
+      if (document.elementFromPoint(rect.left + p.x, rect.top + p.y) !== canvas) continue;
+      const near = m.queryRenderedFeatures([[p.x - 6, p.y - 6], [p.x + 6, p.y + 6]], { layers: ["streets"] });
+      if (near.length !== 1) continue;          // one street within the 6 px click radius, so the click is unambiguous
+      f = x; pt = p; break;
+    }
     if (!f) return null;
-    const pt = m.project(f.geometry.coordinates[Math.floor(f.geometry.coordinates.length / 2)]);
     const hit = m.queryRenderedFeatures([pt.x, pt.y], { layers: ["streets"] });
     return { x: pt.x, y: pt.y, ids: hit.map((h) => String(h.id)) };
   }, before);
@@ -322,9 +332,9 @@ async function verifyStreets(browser) {
 
   // scrub to the storm peak: the cut-route notice offers the reopening hour
   await setHour(page, 210);
-  await page.waitForTimeout(400);
-  const cut = await page.locator(".sv-cut").count();
-  check("at the cyclone peak the route card explains when a route reopens", cut === 1);
+  // the reopening hour is searched after paint, in slices; wait for the answer itself, not just the notice
+  const reopenAt = await page.locator(".sv-cut .sv-link").textContent({ timeout: 8000 }).catch(() => null);
+  check("at the cyclone peak the route card explains when a route reopens", reopenAt !== null, reopenAt ?? "no reopening hour shown");
 
   check("street view: no console errors", errors.length === 0, errors.slice(0, 2).join(" | "));
   await ctx.close();
