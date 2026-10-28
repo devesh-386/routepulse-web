@@ -138,6 +138,7 @@ export default function StreetDashboard() {
         <nav className="sv-tabs" aria-label="View">
           <Link href="/" aria-current="page" className="on">Chennai streets</Link>
           <Link href="/corridors">Tamil Nadu corridors</Link>
+          <Link href="/ops">Control room</Link>
         </nav>
         <span className="sv-spacer" />
         <div className="sv-pill" title="Simulated rainfall over Chennai at the selected hour">

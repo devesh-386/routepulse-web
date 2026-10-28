@@ -33,3 +33,12 @@ Plan: `C:\Users\dev\.claude\plans\giggly-weaving-kahan.md`
 | GPS | `src/lib/geo.ts`: `watchPosition` (high accuracy), opt-in button, never on load; position stays in the browser. Simulated-GPS checks: tracking ±12 m inside Chennai, street under you opens (4.9 m away), dot + accuracy halo, map follows a move to Adyar. |
 | Coverage | Outside the street data (e.g. SRM Kattankulathur, 38 km out) the app says so and offers places instead; denied permission explained. |
 | Google Maps | "Navigate this route in Google Maps": `google.com/maps/dir/?api=1` with origin, destination and waypoints sampled along the chosen route (8 on desktop, 3 on phones, Google's URL limits). No key, no cost. Embedding Google's own basemap would need a billed Maps Platform key and can't mix with MapLibre tiles under Google's terms. |
+
+## Control room `/ops` (2026-10-28)
+
+| Piece | Evidence |
+|---|---|
+| Console | `src/components/ops/`: operations-console layout over the same street simulation. Condition level 1–5 from share of streets closed; KPI strip (closed, very-high +3 h, deep water, city rain, closure peak, risk mix); threat board (riskiest named roads, grouped by name); 13 sector tiles (1.5 km around each place); target telemetry; route options; event log built from closures/reopenings between consecutive 3-h steps. Hotkeys: Space, ←/→ (±3 h), Esc. |
+| Labelling | Hazard banner "simulated exercise · synthetic data" on every screen, plus footer. |
+| Checks | Headless Edge: threat click retargets (76919 → 77696), → advances 201 → 204, no console errors, no horizontal scroll at 1600 px and 375 px. `verify-ui.mjs` all pass (its street-click check is layout-sensitive and failed once in 4 runs, unrelated to this change). tsc + eslint clean, 37 unit tests. |
+| Animmaster | Pack drive (E:) not mounted; motion is hand-rolled and minimal (status pulses, panel fade-in), off under prefers-reduced-motion. |
