@@ -4,11 +4,12 @@
 // Every number on screen is read from the bundle (streets, per-step state, rain); nothing is invented here.
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { hourDate, hourLabel, loadScenario, loadStatic, type ScenarioData, type StaticBundle } from "@/lib/bundle";
+import { useEffect, useMemo, useState } from "react";
+import { hourDate, hourLabel, type ScenarioData, type StaticBundle } from "@/lib/bundle";
+import { useStreetSim } from "@/lib/useStreetSim";
 import {
-  BANDS, bandOf, buildGraph, loadStreets, loadStreetScenario, lowLyingLabel, nearestNode, PLACES, route,
-  streetName, streetRain, type Band, type Graph, type Route, type RouteKind, type StepState, type Streets, type StreetScenario,
+  BANDS, bandOf, lowLyingLabel, nearestNode, PLACES, route,
+  streetName, streetRain, type Band, type Route, type RouteKind, type StepState, type Streets, type StreetScenario,
 } from "@/lib/streets";
 import { metres } from "@/lib/geo";
 import Scrubber from "../Scrubber";
@@ -40,14 +41,7 @@ const point = (id: string): [number, number] => { const pl = PLACES.find((p) => 
 type Event = { hour: number; kind: "closed" | "reopened" | "summary"; text: string; street?: number };
 
 export default function OpsConsole() {
-  const [bundle, setBundle] = useState<StaticBundle | null>(null);
-  const [streets, setStreets] = useState<Streets | null>(null);
-  const [graph, setGraph] = useState<Graph | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState("SC04");
-  const [sim, setSim] = useState<StreetScenario | null>(null);
-  const [rainData, setRainData] = useState<ScenarioData | null>(null);
-  const [hour, setHourState] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 4>(1);
   const [layers, setLayers] = useState<Layers>({ risk: true, rain: false, water: true, closures: true });
@@ -56,33 +50,7 @@ export default function OpsConsole() {
   const [activeRoute, setActiveRoute] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
   const [now, setNow] = useState<Date | null>(null);
-
-  const setHour = useCallback((h: number | ((h: number) => number)) =>
-    setHourState((cur) => (typeof h === "function" ? h(cur ?? 0) : h)), []);
-
-  useEffect(() => {
-    Promise.all([loadStatic(), loadStreets()])
-      .then(([b, s]) => { setBundle(b); setStreets(s); setGraph(buildGraph(s)); })
-      .catch((e) => setError(String(e?.message ?? e)));
-  }, []);
-
-  useEffect(() => {
-    if (!bundle || !streets) return;
-    let live = true;
-    Promise.all([loadStreetScenario(scenario, streets.meta.count), loadScenario(scenario, bundle.manifest)])
-      .then(([s, r]) => {
-        if (!live) return;
-        setSim(s); setRainData(r);
-        // open where closures first pass 0.25 % of streets, as the street view does
-        setHourState((cur) => {
-          if (cur !== null) return cur;
-          const first = s.closedSeries(bundle.manifest.hours).findIndex((n) => n >= streets.meta.count * 0.0025);
-          return first >= 0 ? first : 0;
-        });
-      })
-      .catch((e) => live && setError(String(e?.message ?? e)));
-    return () => { live = false; };
-  }, [bundle, streets, scenario]);
+  const { bundle, streets, graph, error, live, rainData, hour, setHour } = useStreetSim(scenario);
 
   // wall clock for the top bar; the simulation clock is separate and driven by the timeline
   useEffect(() => {
@@ -107,7 +75,6 @@ export default function OpsConsole() {
   }, [last, setHour]);
 
   const h = hour ?? 0;
-  const live = sim?.id === scenario ? sim : null;
   const step = live ? live.stepOf(h) : 0;
   const state = live ? live.state(step) : null;
   const series = useMemo(() => (live && bundle ? live.closedSeries(bundle.manifest.hours) : null), [live, bundle]);

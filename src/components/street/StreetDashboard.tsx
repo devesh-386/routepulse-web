@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { hourLabel, loadScenario, loadStatic, type ScenarioData, type StaticBundle } from "@/lib/bundle";
+import { hourLabel, type ScenarioData, type StaticBundle } from "@/lib/bundle";
+import { useStreetSim } from "@/lib/useStreetSim";
 import {
-  BANDS, bandOf, buildGraph, loadStreets, loadStreetScenario, lowLyingLabel, nearestNode, PLACES, route,
-  STEP_HOURS, streetName, streetRain, type Band, type Graph, type Route, type RouteKind, type Streets, type StreetScenario,
+  BANDS, bandOf, lowLyingLabel, nearestNode, PLACES, route,
+  STEP_HOURS, streetName, streetRain, type Band, type Route, type RouteKind, type Streets, type StreetScenario,
 } from "@/lib/streets";
 import { googleMapsUrl, inCoverage, metres, nearestStreet, useGeolocation, type GeoStatus } from "@/lib/geo";
 import Scrubber from "../Scrubber";
@@ -25,14 +26,7 @@ const KINDS: { kind: RouteKind; title: string; note: string }[] = [
 ];
 
 export default function StreetDashboard() {
-  const [bundle, setBundle] = useState<StaticBundle | null>(null);
-  const [streets, setStreets] = useState<Streets | null>(null);
-  const [graph, setGraph] = useState<Graph | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState("SC04");
-  const [sim, setSim] = useState<StreetScenario | null>(null);
-  const [rainData, setRainData] = useState<ScenarioData | null>(null);
-  const [hour, setHourState] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 4>(1);
   const [layers, setLayers] = useState<Layers>({ risk: true, rain: false, water: true, closures: true });
@@ -46,37 +40,9 @@ export default function StreetDashboard() {
   const { fix, status: gps } = useGeolocation(locate);
   // phones' browsers accept fewer Google Maps waypoints; the dashboard only renders client-side
   const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
-
-  const setHour = useCallback((h: number | ((h: number) => number)) =>
-    setHourState((cur) => (typeof h === "function" ? h(cur ?? 0) : h)), []);
-
-  useEffect(() => {
-    Promise.all([loadStatic(), loadStreets()])
-      .then(([b, s]) => { setBundle(b); setStreets(s); setGraph(buildGraph(s)); })
-      .catch((e) => setError(String(e?.message ?? e)));
-  }, []);
-
-  useEffect(() => {
-    if (!bundle || !streets) return;
-    let live = true;
-    Promise.all([loadStreetScenario(scenario, streets.meta.count), loadScenario(scenario, bundle.manifest)])
-      .then(([s, r]) => {
-        if (!live) return;
-        setSim(s); setRainData(r);
-        // open where closures first pass 0.25 % of streets: risk is building and routes still differ
-        setHourState((cur) => {
-          if (cur !== null) return cur;
-          const ser = s.closedSeries(bundle.manifest.hours);
-          const first = ser.findIndex((n) => n >= streets.meta.count * 0.0025);
-          return first >= 0 ? first : 0;
-        });
-      })
-      .catch((e) => live && setError(String(e?.message ?? e)));
-    return () => { live = false; };
-  }, [bundle, streets, scenario]);
+  const { bundle, streets, graph, error, live, rainData, hour, setHour } = useStreetSim(scenario);
 
   const h = hour ?? 0;
-  const live = sim?.id === scenario ? sim : null;
   const state = live ? live.state(live.stepOf(h)) : null;
   const series = useMemo(() => (live && bundle ? live.closedSeries(bundle.manifest.hours) : null), [live, bundle]);
 
