@@ -42,3 +42,14 @@ Plan: `C:\Users\dev\.claude\plans\giggly-weaving-kahan.md`
 | Labelling | Hazard banner "simulated exercise · synthetic data" on every screen, plus footer. |
 | Checks | Headless Edge: threat click retargets (76919 → 77696), → advances 201 → 204, no console errors, no horizontal scroll at 1600 px and 375 px. `verify-ui.mjs` all pass (its street-click check is layout-sensitive and failed once in 4 runs, unrelated to this change). tsc + eslint clean, 37 unit tests. |
 | Animmaster | Pack drive (E:) not mounted; motion is hand-rolled and minimal (status pulses, panel fade-in), off under prefers-reduced-motion. |
+
+## P0 trust fixes from the brutal review (2026-10-28)
+
+| Fix | Evidence |
+|---|---|
+| Number words | `validate.ts` rejects counting number words ("two closed segments", "twenty-five min", "ten-minute") and arithmetic words (twice, double, half); "one of the routes" still passes. 4 new tests. |
+| "Simulated" enforced | Any sentence citing a minutes, % or model-output value must say "simulated"; bare "will"/"won't" now overclaim. 4 new tests; all 33,600 templates still validate. LLM prompt states both rules. |
+| Missing ≠ low | `route()` reports `unestimatedKm` instead of counting no-estimate streets as 0 %; route tags show "No estimate" (was "No flood risk"); `/ops` shows "risk: no estimate"; map band filter uses the same default as the colours. New street test. Headless: hour 335 → all three routes "No estimate". |
+| Labels | Google Maps hand-off says "Route chosen to avoid simulated flooding, not real conditions"; "No flood risk" → "No simulated risk". |
+| Checks | 47 unit tests, tsc, eslint, `verify-ui.mjs` all pass. |
+| Deferred | Vulnerability ranking (`train.py`) waits: a training run is active in the dataset, so no dataset file was edited or rebuilt. |

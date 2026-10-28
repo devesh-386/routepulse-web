@@ -290,6 +290,7 @@ export interface Route {
   maxP: number;          // highest P(closed +3 h) on the route, %
   meanP: number;         // length-weighted, %
   deepestCm: number;
+  unestimatedKm: number; // length with no +3 h estimate; maxP and meanP cover only the rest
 }
 
 /** Travel time on one street now, in minutes, or Infinity if it is closed. */
@@ -368,14 +369,16 @@ export function route(kind: RouteKind, s: Streets, g: Graph, st: StepState, from
     v = g.adjForward[e] ? g.nodeOfEnd[2 * i] : g.nodeOfEnd[2 * i + 1];
   }
   streets.reverse();
-  let minutes = 0, km = 0, maxP = 0, pSum = 0, deepest = 0;
+  let minutes = 0, km = 0, maxP = 0, pSum = 0, deepest = 0, unknown = 0;
   for (const i of streets) {
     const len = s.lengthDm[i] / 10000;
-    minutes += streetMinutes(s, st, i); km += len;
-    const p = st.p[i] === NO_FORECAST ? 0 : st.p[i];
-    maxP = Math.max(maxP, p); pSum += p * len; deepest = Math.max(deepest, st.depth[i]);
+    minutes += streetMinutes(s, st, i); km += len; deepest = Math.max(deepest, st.depth[i]);
+    // a missing estimate is unknown, not 0 %: keep it out of the risk figures and report it separately
+    if (st.p[i] === NO_FORECAST) { unknown += len; continue; }
+    maxP = Math.max(maxP, st.p[i]); pSum += st.p[i] * len;
   }
-  return { kind, streets, minutes, km, maxP, meanP: km ? pSum / km : 0, deepestCm: deepest };
+  const known = km - unknown;
+  return { kind, streets, minutes, km, maxP, meanP: known > 1e-9 ? pSum / known : 0, deepestCm: deepest, unestimatedKm: unknown };
 }
 
 // ---------------------------------------------------------------- places

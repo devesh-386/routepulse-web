@@ -4,9 +4,9 @@
 //  1. every sentence cites at least one evidence id, and every id exists
 //  2. routes, bus services, segments, scenarios and times named must be in the pack and cited
 //  3. every number must equal a cited item's displayed value, belong to an entity the
-//     sentence names, and carry that item's unit
+//     sentence names, and carry that item's unit; numbers must be digits, never words
 //  4. cause words need a cited item of the matching kind; unsupported causes are rejected
-//  5. no certainty or real-world claims
+//  5. no certainty or real-world claims, and a minutes, % or model-output value must say "simulated"
 // Arithmetic is impossible to slip through: a computed number is not in the pack.
 
 import { ROUTES, SCENARIOS } from "./data";
@@ -43,7 +43,15 @@ const CAUSES: { words: RegExp; needs: (ids: string[], pack: EvidencePack) => boo
   { words: /\b(risk\w*)\b/i, needs: (ids) => has(ids, /\.risk_(score|band)$/), what: "the route-risk score or category" },
 ];
 const UNSUPPORTED = /\b(landslides?|winds?|windy|gusts?|trees?|accidents?|crash\w*|collision\w*|construction|roadworks?|road works|protests?|strikes?|police|festivals?|breakdowns?|maintenance|potholes?)\b/i;
-const OVERCLAIM = /\b(guarantee\w*|definitely|certainly|real-world|real world|real-time|real time|actual(?:ly)?|will be)\b/i;
+const OVERCLAIM = /\b(guarantee\w*|definitely|certainly|real-world|real world|real-time|real time|actual(?:ly)?|will|won't|wont)\b/i;
+
+// a number word counting something ("two closed segments", "twenty-five min") can't be checked against the
+// evidence, so it is rejected; "one of the routes" is a figure of speech and passes
+const NUM_WORD = "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|dozen";
+const COUNTED = "segments?|routes?|roads?|streets?|services?|departures?|trips?|buses|bus|closures?|hours?|h|days?|min|mins|minutes?|cm|mm|km|percent|per cent|centimet(?:er|re)s?|millimet(?:er|re)s?|kilomet(?:er|re)s?|kph";
+const NUMBER_WORD = new RegExp(`\\b((?:${NUM_WORD})(?:[\\s-]+(?:and[\\s-]+)?(?:${NUM_WORD}))*)\\b(?!\\s+of\\b)[\\s-]+(?:[a-z-]+\\s+){0,2}?(?:${COUNTED})\\b`, "i");
+const ARITHMETIC = /\b(twice|double[ds]?|triple[ds]?|half|halved|thrice)\b/i;
+const NEEDS_SIMULATED: Unit[] = ["min", "%"];
 
 const ALL_OD_LABELS = ROUTES.od_pairs.map((o) => o.label);
 const ALL_SCENARIO_NAMES = SCENARIOS.map((s) => s.name);
@@ -139,6 +147,11 @@ export function validateSentence(pack: EvidencePack, s: Sentence): CheckedSenten
     }
   }
 
+  const w = text.match(NUMBER_WORD);
+  if (w) errors.push(`"${w[1]}" is a number written as a word; write it in digits so it can be checked`);
+  const a = text.match(ARITHMETIC);
+  if (a) errors.push(`"${a[0]}" is arithmetic on the evidence, which can't be checked`);
+
   // ---- 4. causes
   for (const c of CAUSES) {
     const w = text.match(c.words);
@@ -150,6 +163,9 @@ export function validateSentence(pack: EvidencePack, s: Sentence): CheckedSenten
   // ---- 5. certainty / real-world claims
   const o = text.match(OVERCLAIM);
   if (o) errors.push(`"${o[0]}" overclaims: this is a simulation`);
+  if (cited.some((e) => NEEDS_SIMULATED.includes(e.unit) || e.kind === "model_output") && !/\bsimulat\w*/i.test(text)) {
+    errors.push(`cites a minutes, % or model-output value, so it must say "simulated"`);
+  }
 
   return { text, evidence_ids: ids, ok: errors.length === 0, errors, kind: sentenceKind(pack, ids) };
 }

@@ -130,3 +130,49 @@ describe("validator rejects", () => {
     expect(v.sentences.filter((s) => !s.ok)).toHaveLength(1);
   });
 });
+
+// the brutal review (#1, #2): spelled-out numbers slipped past the number check, "simulated" was only a
+// prompt request, and only "will be" was treated as certainty
+describe("validator rejects number words, unlabelled simulated values and certainty", () => {
+  const closed = pack.items[`route.${OLD}.segments_closed`].value as number;
+  it("a count written as a word", () => {
+    expect(errorsOf({ text: `${OLD} has two closed segments.`, evidence_ids: [`route.${OLD}.segments_closed`] }))
+      .toMatch(/"two" is a number written as a word/);
+  });
+  it("a hyphenated number word with a unit", () => {
+    expect(errorsOf({ text: `${NEW} has a simulated ETA of twenty-five min.`, evidence_ids: [`route.${NEW}.eta_min`] }))
+      .toMatch(/"twenty-five" is a number written as a word/);
+  });
+  it("a number word joined to its unit by a hyphen", () => {
+    expect(errorsOf({ text: `${NEW} has a ten-minute simulated delay.`, evidence_ids: [`route.${NEW}.delay_min`] }))
+      .toMatch(/"ten" is a number written as a word/);
+  });
+  it("arithmetic words", () => {
+    expect(errorsOf({ text: `${NEW} takes twice as long in this simulated storm.`, evidence_ids: [`route.${NEW}.eta_min`] }))
+      .toMatch(/"twice" is arithmetic/);
+  });
+  it("a minutes value without the word simulated", () => {
+    expect(errorsOf({ text: `${NEW} takes ${d(`route.${NEW}.eta_min`)} min.`, evidence_ids: [`route.${NEW}.eta_min`] }))
+      .toMatch(/must say "simulated"/);
+  });
+  it("a model output without the word simulated", () => {
+    const p = pack.items[`route.${OLD}.p_closed_3h_max_pct`].value;
+    expect(errorsOf({ text: `The model gives ${OLD} a ${p} % probability of a closed segment at +3 h.`,
+                      evidence_ids: [`route.${OLD}.p_closed_3h_max_pct`] }))
+      .toMatch(/must say "simulated"/);
+  });
+  it("a bare will", () => {
+    expect(errorsOf({ text: `${OLD} will flood.`, evidence_ids: [`route.${OLD}.max_water_depth_cm`] }))
+      .toMatch(/"will" overclaims/);
+  });
+  it("won't", () => {
+    expect(errorsOf({ text: `${OLD} won't reopen.`, evidence_ids: [`route.${OLD}.status`] }))
+      .toMatch(/"won't" overclaims/);
+  });
+  it("but still accepts digits, figures of speech and depth without the word simulated", () => {
+    expect(check(`${OLD} is one of the routes for this pair and has ${closed} closed ${closed === 1 ? "segment" : "segments"}.`,
+                 `route.${OLD}.segments_closed`, "od.label").errors).toEqual([]);
+    expect(check(`${OLD} has standing water up to ${d(`route.${OLD}.max_water_depth_cm`)} cm.`,
+                 `route.${OLD}.max_water_depth_cm`).errors).toEqual([]);
+  });
+});

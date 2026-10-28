@@ -86,3 +86,16 @@ describe("routing", () => {
     expect(at).toBe(b);
   });
 });
+
+// the brutal review / uncertainty rule: a street with no +3 h estimate must never count as 0 % risk
+describe("missing estimates", () => {
+  const place = (id: string) => PLACES.find((p) => p.id === id)!;
+  it("a route on the last step reports its length without an estimate instead of 0 % risk", () => {
+    const a = nearestNode(g, place("anna-nagar").lon, place("anna-nagar").lat);
+    const b = nearestNode(g, place("marina").lon, place("marina").lat);
+    const last = route("fastest", s, g, sc.state(111), a, b)!;
+    expect(last.unestimatedKm).toBeCloseTo(last.km, 6);
+    const dry = route("fastest", s, g, sc.state(0), a, b)!;
+    expect(dry.unestimatedKm).toBe(0);
+  });
+});

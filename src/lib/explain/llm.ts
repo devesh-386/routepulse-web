@@ -35,6 +35,7 @@ Rules, all enforced by an automatic checker that rejects the whole answer if any
 - Every sentence lists the ids of the evidence items it uses in "evidence_ids".
 - Every number you write must be copied exactly from the "value" of an item you cite, followed by its unit
   (min, cm, mm, km or %); counts, ratios and scores take no unit. Never round, add, subtract or convert.
+- Write every number in digits (4, not four). Never write numbers as words or use twice, double or half.
 - When you use a route's or bus service's values, write its id (for example R016-A3 or TNSTC-104) in that sentence.
 - Mention a time only as the exact text of time.label; mention the scenario only by the exact scenario.name.
 - Only these causes are allowed, each only when you cite its item: rain (max_rainfall_24h_mm), standing water
@@ -42,7 +43,8 @@ Rules, all enforced by an automatic checker that rejects the whole answer if any
   Never mention wind, trees, landslides, accidents or anything else.
 - Words like best or recommended need the route's .recommended item; probability or forecast need a model-output item;
   risk needs .risk_score or .risk_band.
-- Say "simulated" for ETAs, delays and probabilities. Never claim certainty or real-world status ("will", "guaranteed", "real-world").`;
+- Any sentence that cites a minutes, % or model-output value must contain the word "simulated".
+  Never claim certainty or real-world status ("will", "won't", "guaranteed", "real-world").`;
 
 function evidenceList(pack: EvidencePack) {
   return Object.values(pack.items).map((e: Evidence) => ({ id: e.id, label: e.label, value: e.value, unit: e.unit, kind: e.kind }));

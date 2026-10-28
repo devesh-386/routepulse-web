@@ -217,6 +217,7 @@
 .tag-low { color: #5fd496; border-color: #23664a; background: rgba(35, 102, 74, 0.25); }
 .tag-mid { color: #f2cf6b; border-color: #6b5b32; background: rgba(107, 91, 50, 0.25); }
 .tag-high { color: #ffad66; border-color: #7a4a24; background: rgba(122, 74, 36, 0.25); }
+.tag-none { color: #a9b8c8; border-color: #3a4a5c; background: rgba(129, 147, 168, 0.14); }
 
 @media (prefers-reduced-motion: reduce) {
   .sv * { transition: none !important; }

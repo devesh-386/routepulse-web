@@ -392,7 +392,7 @@ export default function OpsConsole() {
                       <button key={r.kind} type="button" role="radio" aria-checked={k === activeRoute}
                               className={`ops-route ${k === activeRoute ? "on" : ""}`} onClick={() => setActiveRoute(k)} data-kind={r.kind}>
                         <span className="ops-route-code">{meta.code}</span>
-                        <span className="ops-route-main"><b>{meta.title}</b><small>{r.km.toFixed(1)} km · max {r.maxP}% · {r.deepestCm} cm</small></span>
+                        <span className="ops-route-main"><b>{meta.title}</b><small>{r.km.toFixed(1)} km · {r.unestimatedKm >= r.km - 1e-9 ? "risk: no estimate" : `max ${r.maxP}%`} · {r.deepestCm} cm</small></span>
                         <span className="ops-route-eta">{Math.round(r.minutes)}<small>min</small></span>
                         <span className="ops-meter" aria-hidden="true"><i style={{ width: `${Math.min(r.meanP, 100)}%`, background: BANDS.find((b) => b.id === bandOf(Math.round(r.meanP)))!.color }} /></span>
                       </button>

@@ -349,7 +349,9 @@ function RouteCard({ routes, active, setActive, from, to, reopens, onJump, googl
   const risks = routes.map((r) => r.meanP);
   const lo = Math.min(...risks), hi = Math.max(...risks);
   const tag = (r: Route) => {
-    if (hi - lo < 0.5) return { text: hi < 1 ? "No flood risk" : "Similar risk", cls: "tag-low" };
+    // no estimate is unknown, not safe: never tag it as low risk
+    if (r.unestimatedKm >= r.km - 1e-9) return { text: "No estimate", cls: "tag-none" };
+    if (hi - lo < 0.5) return { text: hi < 1 ? "No simulated risk" : "Similar risk", cls: "tag-low" };
     if (r.meanP === lo) return { text: "Lowest risk", cls: "tag-low" };
     if (r.meanP === hi) return { text: "Higher risk", cls: "tag-high" };
     return { text: "Lower risk", cls: "tag-mid" };
@@ -390,14 +392,16 @@ function RouteCard({ routes, active, setActive, from, to, reopens, onJump, googl
       </div>
       {routes.length > 0 && (
         <p className="sv-micro">
-          Active route: highest simulated closure risk on any street {routes[active]?.maxP ?? 0} %, deepest water {routes[active]?.deepestCm ?? 0} cm.
+          Active route: {routes[active] && routes[active].unestimatedKm >= routes[active].km - 1e-9
+            ? "no +3 h closure estimate exists in the scenario's last 3 hours"
+            : <>highest simulated closure risk on any street {routes[active]?.maxP ?? 0} %{routes[active]?.unestimatedKm ? ` (no estimate for ${routes[active].unestimatedKm.toFixed(1)} km of it)` : ""}</>}, deepest water {routes[active]?.deepestCm ?? 0} cm.
           Times use simulated speeds; closed streets are never used.
         </p>
       )}
       {googleUrl && (
         <a className="sv-gmaps" href={googleUrl} target="_blank" rel="noopener noreferrer" data-testid="gmaps">
           <Icon name="arrow" size={16} />Navigate this route in Google Maps
-          <small>Google follows the chosen path through waypoints. Its own traffic and road data apply there.</small>
+          <small>Route chosen to avoid <b>simulated</b> flooding, not real conditions. Google follows it through waypoints; its own traffic and road data apply there.</small>
         </a>
       )}
     </section>

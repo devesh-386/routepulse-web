@@ -146,9 +146,11 @@ export default function StreetMap(p: Props) {
     m.setLayoutProperty("closures", "visibility", p.layers.closures ? "visible" : "none");
     m.setLayoutProperty("streets", "visibility", p.layers.risk ? "visible" : "none");
     const visible = BANDS.filter((b) => p.bands.has(b.id)).map((b) => BAND_CODE[b.id]);
+    // unlisted streets take the same default as the colour layer: "no estimate" on the last step, else low
+    const noFc = p.state && p.state.p[0] === 255 ? BAND_CODE.none : BAND_CODE.low;
     m.setPaintProperty("streets", "line-opacity",
-      ["case", ["in", ["coalesce", ["feature-state", "b"], BAND_CODE.low], ["literal", visible]], 0.92, 0.06]);
-  }, [ready, p.layers, p.bands]);
+      ["case", ["in", ["coalesce", ["feature-state", "b"], noFc], ["literal", visible]], 0.92, 0.06]);
+  }, [ready, p.layers, p.bands, p.state]);
 
   const prevSel = useRef<number | null>(null);
   useEffect(() => {
