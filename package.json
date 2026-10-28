@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "verify:ui": "node scripts/verify-ui.mjs"
+    "verify:ui": "node scripts/verify-ui.mjs",
+    "check": "node scripts/check.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^5.24.0",

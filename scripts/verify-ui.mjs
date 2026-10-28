@@ -282,7 +282,9 @@ async function verifyStreets(browser) {
   await page.goto(BASE);
   await page.waitForFunction(() => window.__rpStreetMap?.queryRenderedFeatures({ layers: ["streets"] }).length > 5000, null, { timeout: 60000 });
   const loadMs = Date.now() - t0;
-  check("street map shows thousands of streets within 6 s (dev server)", loadMs < 6000, `${loadMs} ms`);
+  // 6 s on an idle machine; UI_LOAD_BUDGET_MS raises it explicitly when another job holds the CPU
+  const budget = Number(process.env.UI_LOAD_BUDGET_MS ?? 6000);
+  check(`street map shows thousands of streets within ${budget / 1000} s (dev server)`, loadMs < budget, `${loadMs} ms`);
 
   // the opening hour's colours equal the decoded sparse file
   const hour = Number(await page.locator("#hour").inputValue());

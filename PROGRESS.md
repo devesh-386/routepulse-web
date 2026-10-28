@@ -87,3 +87,8 @@ Plan: `C:\Users\dev\.claude\plans\giggly-weaving-kahan.md`
 | Condition level | Tooltip + footer state the bands (1 ≥ 10 %, 2 ≥ 3 %, 3 ≥ 0.5 %, 4 any closure) and that they are display bands, not an official standard. |
 | Hotkeys | Arrows kept working only when nothing was focused; after clicking a threat they were dead. Now only text fields, selects and the slider keep arrows; buttons keep only Space. |
 | Tests | `verify-ui.mjs` covers `/ops`: ranking order, peak separation, threat → target, arrow step, 1440×900 fit, "no estimate" on the last step, no console errors, 375 px. All pass. |
+
+## One release gate (2026-10-28)
+
+`npm run check` = tsc → eslint → vitest → `verify-ui.mjs` against a running server (fails if no server); `--dataset` adds the dataset's read-only `verify_bundle.py`. Stops at the first failure.
+While model training holds the CPU (100 % load), the 33,600-template test needs > 30 s (timeout now 120 s) and the street map takes 6–9 s to show streets, so the 6 s budget can be raised explicitly with `UI_LOAD_BUDGET_MS`; default stays 6 s. Under load: `UI_LOAD_BUDGET_MS=15000 npm run check` → ALL CHECKS PASSED (6.4 s).

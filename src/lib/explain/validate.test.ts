@@ -28,7 +28,7 @@ describe("templates", () => {
     }
     expect(n).toBe(5 * 112 * 20 * 3);
     expect(failures).toEqual([]);
-  }, 30_000);   // 33,600 combinations; runs ~4 s alone, longer beside the street-data tests
+  }, 120_000);  // 33,600 combinations; ~4 s alone, but 30 s+ when another job (e.g. model training) holds the CPU
 });
 
 // the story's switch: SC03, OD016, previously recommended route now blocked
