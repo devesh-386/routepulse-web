@@ -1,0 +1,22 @@
+{
+ "method": "Physics plus forecast error: the chance that the true 3-hour rain exceeds the noisy forecast by enough to push standing water past the closing depth (32 cm, or keep a closed street above 20 cm). Forecast error is log-normal, sigma 0.35. No training.",
+ "checked_against_simulation": {
+  "SC02": {
+   "street_hours": 2196187,
+   "closed_at_plus_3h": 31838,
+   "average_precision": 0.7995,
+   "brier": 0.01449,
+   "persistence_brier": 0.01568,
+   "new_closures_warned_pct": 71.7
+  },
+  "SC04": {
+   "street_hours": 3871749,
+   "closed_at_plus_3h": 203286,
+   "average_precision": 0.988,
+   "brier": 0.006,
+   "persistence_brier": 0.02168,
+   "new_closures_warned_pct": 78.7
+  }
+ },
+ "caveat": "Scored against the street simulation itself. It describes the simulator, not real Chennai streets."
+}
