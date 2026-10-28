@@ -44,6 +44,8 @@ export interface Streets {
 }
 
 const BASE = "/data/streets";
+// a missing or failed file should say so, not surface as "Unexpected token <" from an HTML error page
+const ok = (r: Response) => { if (!r.ok) throw new Error(`${r.url.split("/").pop()}: HTTP ${r.status}`); return r; };
 const NO_FORECAST = 255;
 export const STEP_HOURS = 3;
 
@@ -56,9 +58,9 @@ function view(buf: ArrayBuffer, meta: StreetsMeta, name: string) {
 
 export async function loadStreets(): Promise<Streets> {
   const [meta, buf, forecastInfo] = await Promise.all([
-    fetch(`${BASE}/streets_meta.json`).then((r) => r.json() as Promise<StreetsMeta>),
-    fetch(`${BASE}/streets.bin`).then((r) => r.arrayBuffer()),
-    fetch(`${BASE}/street_forecast.json`).then((r) => r.json() as Promise<StreetForecastInfo>),
+    fetch(`${BASE}/streets_meta.json`).then((r) => ok(r).json() as Promise<StreetsMeta>),
+    fetch(`${BASE}/streets.bin`).then((r) => ok(r).arrayBuffer()),
+    fetch(`${BASE}/street_forecast.json`).then((r) => ok(r).json() as Promise<StreetForecastInfo>),
   ]);
   if (buf.byteLength !== meta.bytes) throw new Error(`streets.bin is ${buf.byteLength} bytes, meta says ${meta.bytes}`);
   return {
@@ -158,8 +160,8 @@ export function loadStreetScenario(id: string, count: number) {
   const k = id.toLowerCase();
   if (!scenarioCache.has(k)) {
     const p = Promise.all([
-      fetch(`${BASE}/${k}_streets.bin`).then((r) => r.arrayBuffer()),
-      fetch(`${BASE}/${k}_fcst.json`).then((r) => r.json()),
+      fetch(`${BASE}/${k}_streets.bin`).then((r) => ok(r).arrayBuffer()),
+      fetch(`${BASE}/${k}_fcst.json`).then((r) => ok(r).json()),
     ]).then(([buf, f]) => new StreetScenario(id, buf, count, f.block_corners_mm));
     p.catch(() => scenarioCache.delete(k));
     scenarioCache.set(k, p);

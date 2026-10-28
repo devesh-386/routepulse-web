@@ -5,6 +5,7 @@ import { STORY } from "./data";
 import { buildEvidence, display } from "./evidence";
 import { explain } from "./explain";
 import { configFromEnv, createLlmStep, createRateLimiter, parseSentences, type LlmConfig } from "./llm";
+import { clientKey } from "./request";
 import type { ExplainRequest } from "./evidence";
 
 // a local stand-in for an OpenAI-compatible provider; each test sets how it behaves
@@ -133,5 +134,39 @@ describe("helpers", () => {
     expect([allow("a"), allow("a"), allow("a"), allow("b")]).toEqual([true, true, false, true]);
     t = 1001;
     expect(allow("a")).toBe(true);
+  });
+});
+
+// the brutal review (#4): the limiter trusted a spoofable header and cleared every window at 5,000 keys
+describe("rate limiter hardening", () => {
+  it("evicts the oldest keys instead of clearing everyone", () => {
+    let t = 0;
+    const allow = createRateLimiter(1, 60_000, () => t, { globalLimit: Infinity });
+    expect(allow("victim")).toBe(true);
+    expect(allow("victim")).toBe(false);
+    for (let k = 0; k < 5001; k++) allow(`k${k}`);   // the old code cleared every window here
+    t = 1;
+    expect(allow("victim")).toBe(false);   // still limited after other keys arrive
+  });
+  it("caps all callers together, so fresh keys cannot buy unlimited calls", () => {
+    const allow = createRateLimiter(8, 60_000, () => 0, { globalLimit: 3 });
+    expect(["k1", "k2", "k3", "k4"].map((k) => allow(k))).toEqual([true, true, true, false]);
+  });
+  it("applies only the global cap when the caller can't be identified", () => {
+    const allow = createRateLimiter(1, 60_000, () => 0, { globalLimit: 2 });
+    expect([allow(null), allow(null), allow(null)]).toEqual([true, true, false]);
+  });
+});
+
+describe("clientKey", () => {
+  const h = (o: Record<string, string>) => new Headers(o);
+  it("ignores client-supplied forwarding headers off Vercel", () => {
+    expect(clientKey(h({ "x-forwarded-for": "1.2.3.4" }), {})).toBeNull();
+  });
+  it("trusts x-forwarded-for on Vercel, which overwrites it", () => {
+    expect(clientKey(h({ "x-forwarded-for": "1.2.3.4, 5.6.7.8" }), { VERCEL: "1" })).toBe("1.2.3.4");
+  });
+  it("uses the configured header behind a trusted proxy", () => {
+    expect(clientKey(h({ "x-real-ip": "9.9.9.9" }), { RATE_LIMIT_IP_HEADER: "x-real-ip" })).toBe("9.9.9.9");
   });
 });

@@ -110,18 +110,28 @@ export function createLlmStep(cfg: LlmConfig, fetchImpl: typeof fetch = fetch): 
 }
 
 /**
- * Best-effort demo protection for the free quota: an in-memory sliding window per IP.
- * Serverless instances don't share it, so it is not a hard limit.
+ * Best-effort demo protection for the free quota: an in-memory sliding window per caller, plus a cap on
+ * all callers together so fresh keys can't buy unlimited calls. `key` is null when the caller can't be
+ * identified (see clientKey); then only the global cap applies. Serverless instances don't share it.
  */
-export function createRateLimiter(limit: number, windowMs: number, now: () => number = Date.now) {
+export function createRateLimiter(limit: number, windowMs: number, now: () => number = Date.now,
+                                  { globalLimit = limit * 4, maxKeys = 10_000 }: { globalLimit?: number; maxKeys?: number } = {}) {
   const hits = new Map<string, number[]>();
-  return (key: string) => {
+  let all: number[] = [];
+  return (key: string | null) => {
     const t = now();
-    const recent = (hits.get(key) ?? []).filter((x) => t - x < windowMs);
-    if (recent.length >= limit) { hits.set(key, recent); return false; }
-    recent.push(t);
-    hits.set(key, recent);
-    if (hits.size > 5000) hits.clear();   // bound memory on a long-lived instance
+    all = all.filter((x) => t - x < windowMs);
+    if (all.length >= globalLimit) return false;
+    if (key !== null) {
+      const recent = (hits.get(key) ?? []).filter((x) => t - x < windowMs);
+      hits.delete(key);               // re-insert so the Map stays ordered by last use
+      hits.set(key, recent);
+      if (recent.length >= limit) return false;
+      recent.push(t);
+      // bound memory: drop the least recently seen callers one at a time, never everyone at once
+      while (hits.size > maxKeys) hits.delete(hits.keys().next().value!);
+    }
+    all.push(t);
     return true;
   };
 }

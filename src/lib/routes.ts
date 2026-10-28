@@ -62,7 +62,9 @@ export function recommendationReason(rows: RouteRow[]): string {
   if (passable.length === 1) {
     s = `${best.routeId} is the only passable route`;
   } else if (tied.length) {
-    s = `${best.routeId} ties on the lowest simulated ETA (${best.etaMin} min) and has the lower simulated risk score (${best.riskScore})`;
+    s = tied.every((r) => best.riskScore < r.riskScore)
+      ? `${best.routeId} ties on the lowest simulated ETA (${best.etaMin} min) and has the lower simulated risk score (${best.riskScore})`
+      : `${best.routeId} ties on the lowest simulated ETA (${best.etaMin} min) and simulated risk score (${best.riskScore}); the simulation lists it first`;
   } else {
     s = `${best.routeId} has the lowest simulated ETA among the ${passable.length} passable routes (${best.etaMin} min)`;
   }
@@ -71,6 +73,7 @@ export function recommendationReason(rows: RouteRow[]): string {
 }
 
 export function hm(min: number) {
-  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  const t = Math.round(min);           // round first, so 119.6 is "2 h 0 min", never "1 h 60 min"
+  const h = Math.floor(t / 60), m = t % 60;
   return h ? `${h} h ${m} min` : `${m} min`;
 }

@@ -63,3 +63,17 @@ Plan: `C:\Users\dev\.claude\plans\giggly-weaving-kahan.md`
 | Measured (headless Edge, hour step on `/`) | All-routes-cut: median 396 → 35 ms, worst 1,075 → 403 ms. Normal hour: median 207 → 111 ms. |
 | Click tolerance | Minor streets render under 1 px wide; clicks now accept a street within 6 px. This was the cause of the "flaky" street-click check (click points round to whole pixels and missed the hairline). |
 | Test gate | `verify-ui.mjs` waits for the actual reopening hour (not just the notice) and clicks only unambiguous on-canvas points. 5/5 consecutive full runs pass. |
+
+## P2 robustness sweep (2026-10-28)
+
+| Fix | Evidence |
+|---|---|
+| Rate limiter (#4) | `clientKey()` trusts only a platform header (Vercel's x-forwarded-for, or `RATE_LIMIT_IP_HEADER`); elsewhere no per-caller key, so forged headers buy nothing. Global cap 30/min; least-recently-seen eviction instead of `clear()`. 6 new tests (old code fails the eviction one). |
+| Body size (#7h) | `/api/explain` rejects bodies over 2 KB with 413 before parsing. Live: 5 KB → 413, bad JSON → 400, valid → 200. |
+| `hm()` (#7b) | Rounds first: 119.6 → "2 h 0 min". Test. |
+| Tie-break text (#7d) | Says "lower simulated risk score" only when it is lower. Test. |
+| Stale GPS (#7a) | Position cleared when location is switched off. |
+| Fetch errors (#7f) | Street files check `r.ok` and name the failing file. |
+| Story (#7g) | Says "shortest route" only when the route is the shortest. |
+| Corridor map (#7e) | Greys the network while the next scenario loads. |
+| Checks | 55 unit tests, tsc, eslint, `verify-ui.mjs` all pass. |

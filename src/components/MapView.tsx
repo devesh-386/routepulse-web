@@ -174,7 +174,12 @@ export default function MapView({ manifest, network, data, storms, hour, mode, h
   // the hour or mode changed: update feature-state only, never rebuild layers
   useEffect(() => {
     const m = map.current;
-    if (!ready || !m || !data) return;
+    if (!ready || !m) return;
+    if (!data) {
+      // next scenario still loading: grey the network rather than keep showing the previous scenario's colours
+      for (const s of network.segments) m.setFeatureState({ source: "segments", id: s.ix }, { color: "#8a8f98" });
+      return;
+    }
     const palette = statusColors(dark);
     for (const s of network.segments) {
       let color: string;

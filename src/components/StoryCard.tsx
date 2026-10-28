@@ -26,7 +26,9 @@ function stepText(p: Props): string {
   const scenario = p.scenarios.find((x) => x.id === p.story.scenario)!.name;
   switch (s.focus) {
     case "baseline":
-      return `${when}, ${scenario} scenario. Travelling ${od.label}, the shortest route ${r.routeId} is ${r.status} `
+      // "shortest" only when it is: the story's baseline route is the previously recommended one, not rank 1 by rule
+      return `${when}, ${scenario} scenario. Travelling ${od.label}, `
+        + `${cmp.rows.every((x) => x.lengthKm >= r.lengthKm) ? "the shortest route " : "route "}${r.routeId} is ${r.status} `
         + (r.etaMin !== null ? `with a simulated ETA of ${r.etaMin} min (free-flow ${r.freeFlowEtaMin} min).` : "with no simulated ETA.");
     case "storm":
       return `${when}. The storm builds: ${p.data.closedCount(s.hour, p.manifest.closed_min_code)} road segments are closed `

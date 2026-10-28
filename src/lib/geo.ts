@@ -29,7 +29,8 @@ export function useGeolocation(on: boolean) {
       (e) => setStatus(e.code === e.PERMISSION_DENIED ? "denied" : "unavailable"),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
     );
-    return () => { navigator.geolocation.clearWatch(id); setStatus("off"); };
+    // forget the position too: turning location back on must not route from where the device used to be
+    return () => { navigator.geolocation.clearWatch(id); setStatus("off"); setFix(null); };
   }, [on]);
 
   return { fix: on ? fix : null, status: on ? status : "off" as GeoStatus };

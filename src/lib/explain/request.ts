@@ -9,6 +9,17 @@ const KEYS = ["scenario", "hour", "od", "audience"];
 
 export type Parsed = { ok: true; req: ExplainRequest } | { ok: false; error: string };
 
+/**
+ * Who to rate-limit. Only a header the platform controls is trusted: x-forwarded-for on Vercel (which
+ * overwrites it) or the header named in RATE_LIMIT_IP_HEADER behind a trusted proxy. Anywhere else a
+ * client can forge it, so there is no per-caller key and only the global cap applies.
+ */
+export function clientKey(headers: Headers, env: Record<string, string | undefined>): string | null {
+  const name = env.RATE_LIMIT_IP_HEADER?.trim().toLowerCase() || (env.VERCEL ? "x-forwarded-for" : "");
+  if (!name) return null;
+  return headers.get(name)?.split(",")[0].trim() || null;
+}
+
 export function parseExplainRequest(body: unknown): Parsed {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, error: "body must be a JSON object" };
   const b = body as Record<string, unknown>;
