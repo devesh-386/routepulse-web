@@ -91,12 +91,13 @@ export default function OpsConsole() {
   }, []);
 
   const last = bundle ? bundle.manifest.hours - 1 : 0;
-  // console hotkeys: space plays, arrows step one 3-hour assessment; form controls keep their own keys
+  // console hotkeys: space plays, arrows step one 3-hour assessment; text fields, selects and the slider keep their own keys
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(t.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === " ") { e.preventDefault(); setPlaying((p) => !p); }
+      if (["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+      // a focused button keeps Space for itself, but arrows still drive the clock after clicking a threat
+      if (e.key === " ") { if (t.tagName !== "BUTTON") { e.preventDefault(); setPlaying((p) => !p); } }
       else if (e.key === "ArrowRight") { e.preventDefault(); setPlaying(false); setHour((h) => Math.min(h + 3, last)); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); setPlaying(false); setHour((h) => Math.max(h - 3, 0)); }
       else if (e.key === "Escape") setPicked(null);
@@ -139,25 +140,33 @@ export default function OpsConsole() {
     return { closed, deep, vh, high, med, share, cond };
   }, [state, streets]);
 
-  // riskiest named streets, grouped by name (a road is many segments)
+  // named roads that matter most, grouped by name (a road is many segments). Ranked by length closed, then
+  // length at high risk (≥ 40 %), then peak risk: at a storm peak most roads tie at 100 %, so risk alone ranks nothing.
   const threats = useMemo(() => {
     if (!state || !streets) return [];
-    const by = new Map<string, { name: string; street: number; p: number; depth: number; closed: number; segs: number; cls: number }>();
+    const by = new Map<string, { name: string; street: number; p: number; depth: number; closed: number; segs: number; cls: number;
+                                 closedKm: number; riskKm: number; len: number }>();
     for (const i of state.listed) {
       const name = streetName(streets, i);
       if (!name) continue;
       const p = state.p[i] === 255 ? -1 : state.p[i];
+      const km = streets.lengthDm[i] / 10000;
       const isClosed = state.status[i] >= 3 ? 1 : 0;
-      const t = by.get(name);
-      if (!t) { by.set(name, { name, street: i, p, depth: state.depth[i], closed: isClosed, segs: 1, cls: streets.cls[i] }); continue; }
+      let t = by.get(name);
+      if (!t) {
+        t = { name, street: i, p, depth: 0, closed: 0, segs: 0, cls: streets.cls[i], closedKm: 0, riskKm: 0, len: km };
+        by.set(name, t);
+      }
       t.segs++; t.closed += isClosed;
+      if (isClosed) t.closedKm += km; else if (p >= 40) t.riskKm += km;
       t.depth = Math.max(t.depth, state.depth[i]);
       t.cls = Math.min(t.cls, streets.cls[i]);
-      if (p > t.p) { t.p = p; t.street = i; }
+      // the road's representative segment: riskiest, and the longest among equals (not a 7 m stub)
+      if (p > t.p || (p === t.p && km > t.len)) { t.p = p; t.street = i; t.len = km; }
     }
     return [...by.values()]
       .filter((t) => t.p >= 10 || t.closed > 0)
-      .sort((a, b) => b.p - a.p || b.closed - a.closed || b.depth - a.depth)
+      .sort((a, b) => b.closedKm - a.closedKm || b.riskKm - a.riskKm || b.p - a.p || b.depth - a.depth)
       .slice(0, 9);
   }, [state, streets]);
 
@@ -257,7 +266,8 @@ export default function OpsConsole() {
           <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M2 14h5l3-8 5 15 3-9h6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" /></svg>
           <div><b>ROUTEPULSE</b><span>Flood Operations Console · Chennai</span></div>
         </div>
-        <div className={`ops-condition c-${cond.tone}`} role="status" aria-label={`Network condition ${cond.level}, ${cond.name}`}>
+        <div className={`ops-condition c-${cond.tone}`} role="status" aria-label={`Network condition ${cond.level}, ${cond.name}`}
+             title="Display bands by share of streets closed now: 1 ≥ 10 %, 2 ≥ 3 %, 3 ≥ 0.5 %, 4 any closure, 5 none. Not an official alert standard.">
           <span className="ops-condition-k">NETWORK CONDITION</span>
           <div className="ops-condition-scale" aria-hidden="true">
             {[5, 4, 3, 2, 1].map((l) => <i key={l} className={l >= cond.level ? "on" : ""} />)}
@@ -300,7 +310,7 @@ export default function OpsConsole() {
 
       <main className="ops-grid">
         <aside className="ops-col" aria-label="Threat board and sectors">
-          <Panel code="01" title="THREAT BOARD" meta="named roads · +3 h">
+          <Panel code="01" title="THREAT BOARD" meta="ranked by km closed">
             {threats.length === 0 && <p className="ops-empty">No named road above 10 % closure risk at this hour.</p>}
             <ol className="ops-threats">
               {threats.map((t, k) => {
@@ -308,11 +318,11 @@ export default function OpsConsole() {
                 return (
                   <li key={t.name}>
                     <button type="button" className={`ops-threat ${selected === t.street ? "on" : ""}`} onClick={() => setPicked(t.street)}
-                            data-testid="threat">
+                            data-testid="threat" data-street={t.street} data-closed-km={t.closedKm.toFixed(3)} data-risk-km={t.riskKm.toFixed(3)}>
                       <span className="ops-rank">{String(k + 1).padStart(2, "0")}</span>
                       <span className="ops-threat-main">
                         <b>{t.name}</b>
-                        <small>{streets.meta.classes[t.cls]} · {t.segs} seg{t.segs > 1 ? "s" : ""}{t.closed ? ` · ${t.closed} closed` : ""} · {t.depth} cm</small>
+                        <small>{t.closedKm ? `${t.closedKm.toFixed(1)} km closed` : `${t.riskKm.toFixed(1)} km at risk`} · {streets.meta.classes[t.cls]} · {t.depth} cm</small>
                       </span>
                       <span className="ops-pct" style={{ color: band.color }}>{t.p < 0 ? "–" : `${t.p}%`}</span>
                       <span className="ops-meter" aria-hidden="true"><i style={{ width: `${Math.max(t.p, 0)}%`, background: band.color }} /></span>
@@ -423,6 +433,7 @@ export default function OpsConsole() {
       </main>
       <footer className="ops-foot">
         <span>{sc.id} · {sc.description}</span>
+        <span>Condition = display bands on share of streets closed (1 ≥ 10 %, 2 ≥ 3 %, 3 ≥ 0.5 %, 4 any), not an official standard</span>
         <span>Street geometry {streets.meta.attribution} · conditions update every 3 simulated hours · synthetic data</span>
       </footer>
     </div>

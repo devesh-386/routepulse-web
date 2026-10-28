@@ -77,3 +77,13 @@ Plan: `C:\Users\dev\.claude\plans\giggly-weaving-kahan.md`
 | Story (#7g) | Says "shortest route" only when the route is the shortest. |
 | Corridor map (#7e) | Greys the network while the next scenario loads. |
 | Checks | 55 unit tests, tsc, eslint, `verify-ui.mjs` all pass. |
+
+## `/ops` fixes from the review (2026-10-28)
+
+| Fix | Evidence |
+|---|---|
+| Threat ranking | Named roads ranked by km closed, then km at ≥ 40 % risk, then peak risk. At the SC04 peak the board reads 6.5 / 6.3 / 5.4 km closed instead of nine ties at 100 %. Representative segment is the longest among the riskiest, not a 7 m stub. |
+| Laptop fit | Compact layout for desktop heights ≤ 1150 px: 1366×768, 1440×900 and 1920×1080 show threats and all 13 sectors with no scrolling (measured). |
+| Condition level | Tooltip + footer state the bands (1 ≥ 10 %, 2 ≥ 3 %, 3 ≥ 0.5 %, 4 any closure) and that they are display bands, not an official standard. |
+| Hotkeys | Arrows kept working only when nothing was focused; after clicking a threat they were dead. Now only text fields, selects and the slider keep arrows; buttons keep only Space. |
+| Tests | `verify-ui.mjs` covers `/ops`: ranking order, peak separation, threat → target, arrow step, 1440×900 fit, "no estimate" on the last step, no console errors, 375 px. All pass. |

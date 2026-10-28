@@ -351,6 +351,50 @@ async function verifyStreets(browser) {
   await m.close();
 }
 
+// ---- control room (/ops)
+async function verifyOps(browser) {
+  console.log("control room");
+  const cx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+  const page = await cx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => { if (m.type() === "error" && !ignorable(m)) errors.push(m.text()); });
+  await page.goto(`${BASE}/ops`);
+  await page.waitForSelector("[data-testid=ops-target]", { timeout: 60000 });
+  await setHour(page, 210);
+  await page.waitForTimeout(400);
+  const rows = await page.$$eval("[data-testid=threat]", (els) => els.map((e) => [Number(e.dataset.closedKm), Number(e.dataset.riskKm)]));
+  const sorted = rows.every((r, k) => k === 0 || rows[k - 1][0] > r[0] || (rows[k - 1][0] === r[0] && rows[k - 1][1] >= r[1]));
+  check("threat board is ranked by km closed, then km at risk", rows.length > 0 && sorted, rows.slice(0, 3).map((r) => r[0].toFixed(1)).join(" ≥ "));
+  check("threat board separates roads at the storm peak", new Set(rows.map((r) => r[0].toFixed(2))).size > 1);
+  const pick = page.locator("[data-testid=threat]").nth(1);
+  const want = await pick.getAttribute("data-street");
+  await pick.click();
+  check("clicking a threat locks it as the target", (await page.getByTestId("ops-target").getAttribute("data-street")) === want, want);
+  await page.keyboard.press("ArrowRight");   // focus is still on the clicked threat button
+  check("arrow key steps the console clock by 3 h", (await page.locator("#hour").inputValue()) === "213");
+  const fit = await page.evaluate(() => {
+    const col = document.querySelector(".ops-col"), tiles = document.querySelectorAll(".ops-sector");
+    return { scrolls: col.scrollHeight > col.clientHeight + 1, lastBottom: tiles[tiles.length - 1].getBoundingClientRect().bottom, h: innerHeight };
+  });
+  check("1440×900: threats and all 13 sectors fit without scrolling", !fit.scrolls && fit.lastBottom <= fit.h, `last sector at ${Math.round(fit.lastBottom)} px`);
+  await page.locator("#hour").fill("335");
+  await page.waitForTimeout(400);
+  const last = await page.$$eval(".ops-route-main small", (els) => els.map((e) => e.textContent));
+  check("on the last step routes say there is no risk estimate", last.length > 0 && last.every((t) => t.includes("no estimate")), last[0] ?? "no routes");
+  check("control room: no console errors", errors.length === 0, errors.slice(0, 2).join(" | "));
+  await page.screenshot({ path: path.join(OUT, "ops-desktop.png") });
+  await cx.close();
+
+  const m = await browser.newContext({ viewport: { width: 375, height: 812 }, colorScheme: "dark", isMobile: true, hasTouch: true });
+  const mp = await m.newPage();
+  await mp.goto(`${BASE}/ops`);
+  await mp.waitForSelector("[data-testid=ops-target]", { timeout: 60000 });
+  const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  check("control room at 375 px: no horizontal scroll", overflow <= 0, `${overflow}px`);
+  await m.close();
+}
+
 // ---- device location (simulated GPS)
 async function verifyLocation(browser) {
   console.log("device location");
@@ -531,6 +575,7 @@ async function main() {
   contrastChecks();
   await verifyStreets(browser);
   await verifyLocation(browser);
+  await verifyOps(browser);
 
   // reduced motion: playback must still work
   console.log("reduced motion");
