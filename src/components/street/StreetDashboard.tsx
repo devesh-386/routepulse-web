@@ -277,6 +277,7 @@ export default function StreetDashboard() {
 
         {/* ------------------------------------------------ right: street + routes */}
         <aside className="sv-col sv-right" aria-label="Street and route details">
+          {state && <StreetFinder streets={streets} state={state} selected={selected} onPick={setPicked} />}
           {selected !== null && state
             ? <StreetCard streets={streets} i={selected} state={state} rain={rainData} hour={h} sim={live!}
                           manifest={bundle.manifest} scenario={scenario} onClose={picked !== null ? () => setPicked(null) : undefined} />
@@ -364,6 +365,59 @@ function StreetCard({ streets, i, state, rain, hour, sim, manifest, scenario, on
           <p className="sv-micro">It describes the simulator, not real Chennai streets.</p>
         </div>
       )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- keyboard / screen-reader street selection
+
+function StreetFinder({ streets, state, selected, onPick }: {
+  streets: Streets; state: NonNullable<ReturnType<StreetScenario["state"]>>; selected: number | null; onPick: (i: number) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(-1);
+  // name → its segments, once per street set
+  const byName = useMemo(() => {
+    const m = new Map<string, number[]>();
+    for (let i = 0; i < streets.meta.count; i++) {
+      const n = streetName(streets, i);
+      if (n) { const a = m.get(n); if (a) a.push(i); else m.set(n, [i]); }
+    }
+    return m;
+  }, [streets]);
+  // streets at this step, riskiest first (closed, then +3 h risk, then water)
+  const ranked = useMemo(() => [...state.listed].sort((a, b) =>
+    (state.status[b] >= 3 ? 1 : 0) - (state.status[a] >= 3 ? 1 : 0)
+    || (state.p[b] === 255 ? -1 : state.p[b]) - (state.p[a] === 255 ? -1 : state.p[a])
+    || state.depth[b] - state.depth[a]), [state]);
+  const riskiestOf = (segs: number[]) => segs.reduce((best, i) => {
+    const p = (j: number) => (state.p[j] === 255 ? -1 : state.p[j]) + (state.status[j] >= 3 ? 1000 : 0);
+    return p(i) > p(best) ? i : best;
+  }, segs[0]);
+  const choose = (v: string) => {
+    setQuery(v);
+    const segs = byName.get(v.trim());
+    if (segs) onPick(riskiestOf(segs));
+  };
+  const next = () => {
+    if (!ranked.length) return;
+    const k = (cursor + 1) % ranked.length;
+    setCursor(k);
+    onPick(ranked[k]);
+  };
+  const name = selected !== null ? streetName(streets, selected) ?? "an unnamed street" : null;
+  return (
+    <section className="sv-card sv-finder" aria-label="Find a street">
+      <label className="sv-finder-field">
+        <span className="sv-sub">Find a street</span>
+        <input type="search" list="sv-street-names" value={query} placeholder="Type a street name…" autoComplete="off"
+               onChange={(e) => choose(e.target.value)} data-testid="street-search" />
+      </label>
+      <datalist id="sv-street-names">{[...byName.keys()].map((n) => <option key={n} value={n} />)}</datalist>
+      <button type="button" className="sv-finder-next" onClick={next} disabled={!ranked.length} data-testid="next-risky">
+        Next riskiest street{cursor >= 0 && ranked.length ? ` (${cursor + 1} of ${ranked.length})` : ""}
+      </button>
+      <p className="sr-only" aria-live="polite">{name ? `Showing ${name}.` : ""}</p>
     </section>
   );
 }

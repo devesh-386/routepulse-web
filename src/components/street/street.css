@@ -282,3 +282,15 @@
 .sv-gmaps:active { transform: translateY(1px); }
 .sv-gmaps small { grid-column: 2; font-weight: 400; font-size: 12px; color: rgba(255, 255, 255, 0.82); }
 @media (prefers-reduced-motion: reduce) { .sv-gps-dot.live { animation: none; } }
+
+/* ---------------- street finder (keyboard / screen-reader selection) */
+.sv-finder { display: grid; gap: 8px; }
+.sv-finder-field { display: grid; gap: 4px; }
+.sv-finder-field input {
+  background: var(--card-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; color: var(--text); font: inherit;
+}
+.sv-finder-next {
+  justify-self: start; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--line-2); border-radius: 8px;
+  padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.sv-finder-next:disabled { opacity: 0.5; cursor: default; }

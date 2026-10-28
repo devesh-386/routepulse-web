@@ -92,3 +92,13 @@ Plan: `C:\Users\dev\.claude\plans\giggly-weaving-kahan.md`
 
 `npm run check` = tsc → eslint → vitest → `verify-ui.mjs` against a running server (fails if no server); `--dataset` adds the dataset's read-only `verify_bundle.py`. Stops at the first failure.
 While model training holds the CPU (100 % load), the 33,600-template test needs > 30 s (timeout now 120 s) and the street map takes 6–9 s to show streets, so the 6 s budget can be raised explicitly with `UI_LOAD_BUDGET_MS`; default stays 6 s. Under load: `UI_LOAD_BUDGET_MS=15000 npm run check` → ALL CHECKS PASSED (6.4 s).
+
+## Keyboard street selection + dataset fixes (2026-10-28)
+
+| Fix | Evidence |
+|---|---|
+| Street finder (review #21) | `/` right column: search field with all 6,324 street names (picks that road's riskiest segment at this hour), "Next riskiest street" button stepping through streets riskiest-first, polite live region announcing the selection. UI checks: "Anna Salai" typed → Anna Salai shown; Enter on the button → a 100 % street. |
+| Dataset repo | `C:\claude\routepulse-dataset` is now git (scripts + docs; data/, ensemble/, models/, osm_cache/, figures/ ignored). |
+| Vulnerability ranking (#3) | `build_bundle.py` ranks by `worlds_with_closure_pct`, the value shown. On the current CSV this is strictly descending over 83 segments and lifts a 25.8 % segment from below rank 8 to rank 2. Shipped JSON is fixed at the next bundle rebuild (after training; `public/data` is never hand-edited). |
+| Reproducibility (#8) | `--draws` default 10,000 (as shipped); "held-out worlds" label read from metrics; street forecast noise seeded per scenario id; `allow_nan=False` + NaN guard in street outputs. Seed change alters street forecast noise on the next rebuild. |
+| Contract (#8) | `verify_bundle.py` checks streets.bin sha256, every scenario's street files, no NaN in street_forecast.json, and ranking order. Today: all pass except ranking (fails at ranks 3, 8, 13, 17, 18 until rebuild). |

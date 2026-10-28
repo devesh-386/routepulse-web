@@ -332,6 +332,20 @@ async function verifyStreets(browser) {
           `${before} → ${after}`);
   }
 
+  // keyboard / screen reader: find a street by name, and step to the riskiest streets without a mouse
+  const smeta = JSON.parse(fs.readFileSync(path.join(DATA, "streets", "streets_meta.json")));
+  const want = smeta.names.includes("Anna Salai") ? "Anna Salai" : smeta.names[0];
+  await page.getByTestId("street-search").fill(want);
+  await page.waitForTimeout(200);
+  const shownName = await page.locator(".sv-street-name b").textContent();
+  check("typing a street name inspects that street", shownName === want, `${want} → ${shownName}`);
+  const prevStreet = await page.getByTestId("street").getAttribute("data-street");
+  await page.getByTestId("next-risky").focus();
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(200);
+  const nx = await page.getByTestId("street").evaluate((e) => ({ id: e.dataset.street, p: Number(e.dataset.p) }));
+  check("'Next riskiest street' works from the keyboard and picks a high-risk street", nx.id !== prevStreet && nx.p >= 40, `${nx.id} at ${nx.p} %`);
+
   // scrub to the storm peak: the cut-route notice offers the reopening hour
   await setHour(page, 210);
   // the reopening hour is searched after paint, in slices; wait for the answer itself, not just the notice
