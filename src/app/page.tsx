@@ -1,5 +1,5 @@
-import StreetDashboard from "@/components/street/StreetDashboard";
+import Hero from "@/components/hero/Hero";
 
 export default function Page() {
-  return <StreetDashboard />;
+  return <Hero />;
 }

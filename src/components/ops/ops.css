@@ -1,4 +1,5 @@
-/* Control-room console. Scoped to .ops; the variables below also re-theme the shared Scrubber. */
+/* Control-room console, light ("day shift") or dark (follows <html data-theme>). Scoped to .ops; the variables
+   below also re-theme the shared Scrubber. */
 .ops {
   --bg: #03060a;
   --panel: #060c13;
@@ -21,6 +22,8 @@
   --bad: var(--crit);
   --tone: var(--ok);
   --mono: var(--font-geist-mono), ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --head-a: #07101a; --head-b: #050a10; --mapbg: #0a1118; --vignette: rgba(3, 6, 10, 0.55); --glass: rgba(3, 6, 10, 0.8);
+  --foot: #04080d; --scan: rgba(255, 255, 255, 0.018);
   color-scheme: dark;
   position: relative;
   height: 100dvh;
@@ -39,7 +42,7 @@
 /* faint static scanlines over the whole console */
 .ops::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 50;
-  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px);
+  background: repeating-linear-gradient(to bottom, var(--scan) 0 1px, transparent 1px 3px);
 }
 .ops :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ops button, .ops select { font: inherit; color: inherit; }
@@ -74,7 +77,7 @@
 
 .ops-top {
   display: flex; align-items: center; gap: 22px; padding: 8px 16px; flex-wrap: wrap;
-  background: linear-gradient(to bottom, #07101a, #050a10); border-bottom: 1px solid var(--line-2);
+  background: linear-gradient(to bottom, var(--head-a), var(--head-b)); border-bottom: 1px solid var(--line-2);
 }
 .ops-brand { display: flex; align-items: center; gap: 10px; color: var(--accent); }
 .ops-brand div { display: flex; flex-direction: column; line-height: 1.15; }
@@ -177,13 +180,13 @@ button.ops-kpi:hover { background: var(--panel-2); }
 
 /* ---------------- centre: map + timeline */
 .ops-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
-.ops-mapframe { position: relative; flex: 1; min-height: 320px; overflow: hidden; background: #0a1118; }
+.ops-mapframe { position: relative; flex: 1; min-height: 320px; overflow: hidden; background: var(--mapbg); }
 .ops-mapframe::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background:
     linear-gradient(to right, rgba(34, 211, 238, 0.05) 1px, transparent 1px) 0 0 / 80px 80px,
     linear-gradient(to bottom, rgba(34, 211, 238, 0.05) 1px, transparent 1px) 0 0 / 80px 80px,
-    radial-gradient(ellipse at center, transparent 55%, rgba(3, 6, 10, 0.55));
+    radial-gradient(ellipse at center, transparent 55%, var(--vignette));
 }
 .ops-corner { position: absolute; width: 18px; height: 18px; z-index: 3; pointer-events: none; border: 0 solid var(--accent); }
 .ops-corner.tl { top: 8px; left: 8px; border-top-width: 2px; border-left-width: 2px; }
@@ -192,12 +195,12 @@ button.ops-kpi:hover { background: var(--panel-2); }
 .ops-corner.br { bottom: 8px; right: 8px; border-bottom-width: 2px; border-right-width: 2px; }
 .ops-hud {
   position: absolute; z-index: 3; pointer-events: none; display: flex; flex-direction: column; gap: 2px;
-  padding: 7px 10px; background: rgba(3, 6, 10, 0.78); border: 1px solid var(--line-2);
+  padding: 7px 10px; background: var(--glass); border: 1px solid var(--line-2);
   font-family: var(--mono); font-size: 10.5px; color: var(--muted);
 }
 .ops-hud b { color: var(--accent); letter-spacing: 0.16em; font-size: 10.5px; }
 .ops-hud-tl { top: 18px; left: 18px; }
-.ops-layers { position: absolute; z-index: 3; top: 18px; right: 18px; display: flex; border: 1px solid var(--line-2); background: rgba(3, 6, 10, 0.85); }
+.ops-layers { position: absolute; z-index: 3; top: 18px; right: 18px; display: flex; border: 1px solid var(--line-2); background: var(--glass); }
 .ops-layers button {
   padding: 5px 9px; border: 0; border-right: 1px solid var(--line-2); background: none; cursor: pointer;
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--faint);
@@ -206,19 +209,19 @@ button.ops-kpi:hover { background: var(--panel-2); }
 .ops-layers button.on { color: var(--accent); background: var(--accent-soft); }
 .ops-legend {
   position: absolute; z-index: 3; left: 18px; bottom: 40px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: calc(100% - 120px);
-  padding: 6px 10px; background: rgba(3, 6, 10, 0.8); border: 1px solid var(--line-2);
+  padding: 6px 10px; background: var(--glass); border: 1px solid var(--line-2);
   font-family: var(--mono); font-size: 10px; color: var(--muted); pointer-events: none;
 }
 .ops-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .ops-legend i { width: 14px; height: 3px; display: inline-block; }
-.ops-legend i.dash { background: repeating-linear-gradient(to right, #fff 0 3px, transparent 3px 6px); }
-.ops .maplibregl-ctrl-group { background: #060c13; border: 1px solid var(--line-2); border-radius: 2px; box-shadow: none; }
+.ops-legend i.dash { background: repeating-linear-gradient(to right, var(--text) 0 3px, transparent 3px 6px); }
+.ops .maplibregl-ctrl-group { background: var(--panel); border: 1px solid var(--line-2); border-radius: 2px; box-shadow: none; }
 .ops .maplibregl-ctrl-group button + button { border-top: 1px solid var(--line-2); }
 .ops .maplibregl-ctrl-group button span { filter: invert(0.85); }
 .ops .maplibregl-ctrl-bottom-right { margin: 0 14px 14px 0; }
 .ops .maplibregl-ctrl-bottom-left { margin: 0 0 14px 14px; }
-.ops .maplibregl-ctrl-scale { background: rgba(3, 6, 10, 0.8); color: var(--muted); border-color: var(--faint); font-family: var(--mono); font-size: 10px; }
-.ops .maplibregl-ctrl-attrib { background: rgba(3, 6, 10, 0.75); color: var(--faint); font-size: 10px; }
+.ops .maplibregl-ctrl-scale { background: var(--glass); color: var(--muted); border-color: var(--faint); font-family: var(--mono); font-size: 10px; }
+.ops .maplibregl-ctrl-attrib { background: var(--glass); color: var(--faint); font-size: 10px; }
 .ops .maplibregl-ctrl-attrib a { color: var(--muted); }
 .ops .place-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
 
@@ -297,7 +300,7 @@ button.ops-kpi:hover { background: var(--panel-2); }
 
 .ops-foot {
   display: flex; justify-content: space-between; gap: 16px; padding: 4px 16px; border-top: 1px solid var(--line-2);
-  background: #04080d; font-family: var(--mono); font-size: 10px; color: var(--faint);
+  background: var(--foot); font-family: var(--mono); font-size: 10px; color: var(--faint);
 }
 .ops-foot span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ops-foot span:nth-child(2) { flex: 0 1 auto; }
@@ -362,3 +365,16 @@ button.ops-kpi:hover { background: var(--panel-2); }
 @media (prefers-reduced-motion: reduce) {
   .ops *, .ops-boot * { animation: none !important; transition: none !important; }
 }
+
+/* ---------------- day shift (light) */
+:root[data-theme="light"] .ops {
+  --bg: #e9eef3; --panel: #ffffff; --panel-2: #f2f5f8; --line: #d5dde5; --line-2: #c2ccd6;
+  --text: #0f1b27; --muted: #4f6275; --faint: #6c7d8e; --accent: #0e7490; --accent-soft: rgba(14, 116, 144, 0.1);
+  --ok: #0f7a52; --info: #0e7490; --warn: #8a6400; --high: #b85000; --crit: #c8102e;
+  --head-a: #ffffff; --head-b: #f4f7fa; --mapbg: #e9edf1; --vignette: rgba(15, 27, 39, 0.08); --glass: rgba(255, 255, 255, 0.92);
+  --foot: #f4f7fa; --scan: transparent;
+  color-scheme: light;
+}
+:root[data-theme="light"] .ops-banner { background: repeating-linear-gradient(-45deg, #fff4d1 0 10px, #fbecc0 10px 20px); color: #6b4c00; border-bottom-color: #e8cf86; }
+:root[data-theme="light"] .ops-banner-dot { background: #b88400; }
+:root[data-theme="light"] .ops .btn { color: #ffffff; }

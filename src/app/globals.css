@@ -15,22 +15,20 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --surface: #151b23;
-    --surface-2: #1d2530;
-    --text: #e6eaf0;
-    --muted: #9aa5b1;
-    --border: #2a3441;
-    --accent: #7aa2ff;
-    --accent-soft: #1d2a45;
-    --banner-bg: #33290a;
-    --banner-text: #f5d77a;
-    --ok: #6cc47a;
-    --bad: #ff7a85;
-    color-scheme: dark;
-  }
+:root[data-theme="dark"] {
+  --bg: #0d1117;
+  --surface: #151b23;
+  --surface-2: #1d2530;
+  --text: #e6eaf0;
+  --muted: #9aa5b1;
+  --border: #2a3441;
+  --accent: #7aa2ff;
+  --accent-soft: #1d2a45;
+  --banner-bg: #33290a;
+  --banner-text: #f5d77a;
+  --ok: #6cc47a;
+  --bad: #ff7a85;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }

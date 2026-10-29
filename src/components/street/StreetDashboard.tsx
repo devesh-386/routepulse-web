@@ -1,15 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hourLabel, type ScenarioData, type StaticBundle } from "@/lib/bundle";
 import { useStreetSim } from "@/lib/useStreetSim";
+import { useDark } from "@/lib/useDark";
 import {
-  BANDS, bandOf, lowLyingLabel, nearestNode, PLACES, route,
+  BANDS, bandHex, bandOf, lowLyingLabel, nearestNode, PLACES, route,
   STEP_HOURS, streetName, streetRain, type Band, type Route, type RouteKind, type Streets, type StreetScenario,
 } from "@/lib/streets";
 import { googleMapsUrl, inCoverage, metres, nearestStreet, useGeolocation, type GeoStatus } from "@/lib/geo";
 import Scrubber from "../Scrubber";
+import Curtain from "../shell/Curtain";
+import MapMenu from "../shell/MapMenu";
 import Icon from "./Icons";
 import StreetMap, { type Layers } from "./StreetMap";
 import "./street.css";
@@ -26,10 +28,27 @@ const KINDS: { kind: RouteKind; title: string; note: string }[] = [
 ];
 
 export default function StreetDashboard() {
+  const dark = useDark();
   const [scenario, setScenario] = useState("SC04");
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 4>(1);
-  const [layers, setLayers] = useState<Layers>({ risk: true, rain: false, water: true, closures: true });
+  const [layers, setLayers] = useState<Layers>({ risk: true, rain: false, water: true, closures: true, buildings: true });
+  const [view3d, setView3d] = useState(false);
+  const [driving, setDriving] = useState(false);
+  const [menu, setMenu] = useState<"layers" | "legend" | null>(null);
+  // full screen covers the map and the timeline, so time can still be scrubbed
+  const mapCol = useRef<HTMLElement>(null);
+  const [full, setFull] = useState(false);
+  const canFull = typeof document !== "undefined" && document.fullscreenEnabled;
+  useEffect(() => {
+    const on = () => setFull(document.fullscreenElement === mapCol.current && mapCol.current !== null);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const toggleFull = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void mapCol.current?.requestFullscreen().catch(() => {});
+  };
   const [bands, setBands] = useState<Set<Band>>(new Set(BANDS.map((b) => b.id)));
   const [from, setFrom] = useState("anna-nagar");
   const [to, setTo] = useState("marina");
@@ -113,9 +132,12 @@ export default function StreetDashboard() {
   }, [picked, covered, here, state, routes, activeRoute]);
 
   if (error) return <main className="fatal" role="alert"><h1>Could not load the street simulation</h1><p>{error}</p></main>;
-  if (!bundle || !streets || !graph) {
-    return <main className="sv-loading" aria-busy="true"><Icon name="logo" size={28} /><span>Loading 80,905 Chennai street segments…</span></main>;
-  }
+  const curtain = (ready: boolean) => (
+    <Curtain ready={ready} bg={dark ? "#08111b" : "#eef2f6"} fg={dark ? "#8ea2b6" : "#556678"}>
+      <span className="sv-loading"><Icon name="logo" size={28} /><span>Loading 80,905 Chennai street segments…</span></span>
+    </Curtain>
+  );
+  if (!bundle || !streets || !graph) return <>{curtain(false)}</>;
 
   const sc = bundle.scenarios.find((s) => s.id === scenario)!;
   const cityRain = rainData
@@ -123,16 +145,12 @@ export default function StreetDashboard() {
     : null;
 
   return (
-    <div className="sv">
+    <>{curtain(true)}<div className="sv">
       <header className="sv-top">
         <div className="sv-brand"><Icon name="logo" size={30} className="sv-logo" /><span>RoutePulse</span></div>
         <span className="sv-divider" aria-hidden="true" />
         <p className="sv-subtitle">Climate-aware intelligence layer for everyday navigation in Tamil Nadu</p>
-        <nav className="sv-tabs" aria-label="View">
-          <Link href="/" aria-current="page" className="on">Chennai streets</Link>
-          <Link href="/corridors">Tamil Nadu corridors</Link>
-          <Link href="/ops">Control room</Link>
-        </nav>
+        <span className="sv-mode">Max mode</span>
         <span className="sv-spacer" />
         <div className="sv-pill" title="Simulated rainfall over Chennai at the selected hour">
           <Icon name="rain" size={18} />
@@ -190,29 +208,6 @@ export default function StreetDashboard() {
             <p className="sv-micro">Routes are computed on the real street network against the simulated conditions at the selected hour. Your location stays in this browser.</p>
           </section>
 
-          <section className="sv-card" aria-labelledby="layers-h">
-            <h2 id="layers-h" className="sv-h"><Icon name="layers" />Map layers</h2>
-            {([
-              ["risk", "Flood risk (roads)", "drop"], ["rain", "Rainfall", "rain"],
-              ["water", "Waterlogging (deep)", "waves"], ["closures", "Road closures", "block"],
-            ] as const).map(([k, label, icon]) => (
-              <label key={k} className="sv-toggle">
-                <span><Icon name={icon} />{label}</span>
-                <input type="checkbox" role="switch" checked={layers[k]}
-                       onChange={() => setLayers((l) => ({ ...l, [k]: !l[k] }))} />
-                <span className="track" aria-hidden="true" />
-              </label>
-            ))}
-            <h3 className="sv-sub">Risk level · closure at +3 h</h3>
-            {BANDS.map((b) => (
-              <label key={b.id} className="sv-check">
-                <span><i style={{ background: b.color }} />{b.label}<small>{b.range}</small></span>
-                <input type="checkbox" checked={bands.has(b.id)}
-                       onChange={() => setBands((s) => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} />
-              </label>
-            ))}
-          </section>
-
           <section className="sv-card sv-note" aria-label="About this map">
             <p><b>{sc.name}.</b> {sc.description}</p>
             <p className="sv-micro">Street geometry {streets.meta.attribution}. Flood susceptibility is a low-lying proxy (distance to rivers, canals, drains and the coast; underpasses; bridges), not measured elevation.</p>
@@ -220,19 +215,62 @@ export default function StreetDashboard() {
         </aside>
 
         {/* ------------------------------------------------ centre: map + time */}
-        <section className="sv-mapcol" aria-label="Map and timeline">
+        <section className="sv-mapcol" aria-label="Map and timeline" ref={mapCol}>
           <div className="sv-mapframe">
             <StreetMap streets={streets} network={bundle.network} state={state} rainData={rainData} hour={h}
                        layers={layers} bands={bands} routes={routes} activeRoute={activeRoute}
-                       selected={selected} onSelect={setPicked} endpoints={ends}
-                       me={covered ? fix : null} follow={follow && covered} />
-            <div className="sv-legend" aria-label="Legend">
-              <div className="sv-legend-title">Closure risk <span>+3 hours</span></div>
-              {BANDS.map((b) => <div key={b.id} className="sv-legend-row"><i style={{ background: b.color }} />{b.label}<small>{b.range}</small></div>)}
-              <div className="sv-legend-row"><i className="dash" />Closed now</div>
-              <div className="sv-legend-row"><i className="glow" />Water over 18 cm</div>
+                       selected={selected} onSelect={setPicked} endpoints={ends} dark={dark}
+                       me={covered ? fix : null} follow={follow && covered && !driving}
+                       view3d={view3d} drive={driving} onDriveExit={() => setDriving(false)} />
+            <div className="sv-tools sv-tools-left">
+              <MapMenu id="menu-layers" label="Layers" icon="layers" open={menu === "layers"} setOpen={(o) => setMenu(o ? "layers" : null)}>
+                {([
+                  ["risk", "Flood risk (roads)", "drop"], ["rain", "Rainfall", "rain"],
+                  ["water", "Waterlogging (deep)", "waves"], ["closures", "Road closures", "block"],
+                  ["buildings", "3D buildings", "cube"],
+                ] as const).map(([k, label, icon]) => (
+                  <label key={k} className="sv-toggle">
+                    <span><Icon name={icon} />{label}</span>
+                    <input type="checkbox" role="switch" checked={layers[k]}
+                           onChange={() => setLayers((l) => ({ ...l, [k]: !l[k] }))} />
+                    <span className="track" aria-hidden="true" />
+                  </label>
+                ))}
+                <p className="sv-micro">Buildings show in the 3D view. Most heights are estimated from footprint size, not measured.</p>
+              </MapMenu>
+              <MapMenu id="menu-legend" label="Legend & filter" icon="legend" open={menu === "legend"} setOpen={(o) => setMenu(o ? "legend" : null)}>
+                <h3 className="sv-sub">Closure risk <small>+3 hours</small></h3>
+                {BANDS.map((b) => (
+                  <label key={b.id} className="sv-check">
+                    <span><i style={{ background: b.color }} />{b.label}<small>{b.range}</small></span>
+                    <input type="checkbox" checked={bands.has(b.id)}
+                           onChange={() => setBands((s) => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} />
+                  </label>
+                ))}
+                <div className="sv-legend-row"><i className="dash" />Closed now</div>
+                <div className="sv-legend-row"><i className="glow" />Water over 18 cm</div>
+                <p className="sv-micro">Untick a level to hide its streets.</p>
+              </MapMenu>
             </div>
-            <div className="sv-badge" role="note"><Icon name="flask" size={14} />Simulated scenario</div>
+            <div className="sv-tools sv-tools-right">
+              <div className="sv-seg" role="group" aria-label="Map view">
+                <button type="button" aria-pressed={!view3d} onClick={() => setView3d(false)}>2D</button>
+                <button type="button" aria-pressed={view3d} onClick={() => setView3d(true)}><Icon name="cube" size={14} />3D</button>
+              </div>
+              <button type="button" className={`sv-tool ${driving ? "on" : ""}`} aria-pressed={driving}
+                      disabled={!routes.length && !driving}
+                      title={routes.length ? "Follow the selected route at street level" : "No open route to drive at this hour"}
+                      onClick={() => { setDriving((d) => !d); setPlaying(false); setMenu(null); }}>
+                <Icon name="drive" size={15} />Drive route
+              </button>
+              {canFull && (
+                <button type="button" className="sv-tool sv-tool-icon" aria-pressed={full} onClick={toggleFull}
+                        aria-label={full ? "Exit full screen" : "Full screen"} title={full ? "Exit full screen (Esc)" : "Full screen"}>
+                  <Icon name={full ? "shrink" : "expand"} size={16} />
+                </button>
+              )}
+            </div>
+            <div className="sv-badge" role="note"><Icon name="flask" size={14} />Simulated scenario{view3d || driving ? " · estimated heights" : ""}</div>
           </div>
           {hour !== null && (
             <Scrubber manifest={bundle.manifest} data={rainData} series={series} seriesLabel="streets" hour={h}
@@ -262,7 +300,7 @@ export default function StreetDashboard() {
                        ? googleMapsUrl(streets, routes[activeRoute].streets, ends[0], ends[1], coarse ? 3 : 8) : null} />
         </aside>
       </main>
-    </div>
+    </div></>
   );
 }
 
@@ -272,6 +310,7 @@ function StreetCard({ streets, i, state, rain, hour, sim, manifest, scenario, on
   streets: Streets; i: number; state: NonNullable<ReturnType<StreetScenario["state"]>>; rain: ScenarioData | null;
   hour: number; sim: StreetScenario; manifest: StaticBundle["manifest"]; scenario: string; onClose?: () => void;
 }) {
+  const dark = useDark();
   const name = streetName(streets, i) ?? "Unnamed street";
   const cls = streets.meta.classes[streets.cls[i]];
   const p = state.p[i];
@@ -305,7 +344,7 @@ function StreetCard({ streets, i, state, rain, hour, sim, manifest, scenario, on
         {onClose && <button type="button" className="sv-iconbtn" aria-label="Back to the riskiest street" onClick={onClose}><Icon name="close" size={14} /></button>}
       </div>
       <div className="sv-street-name">
-        <i style={{ background: band.color }} aria-hidden="true" />
+        <i style={{ background: bandHex(band, dark) }} aria-hidden="true" />
         <div><b>{name}</b><span>{cls[0].toUpperCase() + cls.slice(1)} road · Chennai</span></div>
       </div>
       <div className={`sv-risk band-${band.id}`}>

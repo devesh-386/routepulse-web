@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASE = process.argv[2] ?? "http://localhost:3210";
+const MAX = `${BASE}/max`;
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DATA = path.join(ROOT, "public", "data");
 const OUT = path.join(ROOT, "test-results");
@@ -28,223 +29,22 @@ const check = (name, ok, detail = "") => {
 // ---- expected values, decoded independently of the app
 const manifest = JSON.parse(fs.readFileSync(path.join(DATA, "manifest.json")));
 const H = manifest.hours, S = manifest.segments, C = manifest.grid_cells;
-const cube = (sc) => fs.readFileSync(path.join(DATA, `${sc.toLowerCase()}.bin`));
-const rain = (sc) => fs.readFileSync(path.join(DATA, `${sc.toLowerCase()}_rain.bin`));
-const styleSrc = fs.readFileSync(path.join(ROOT, "src", "lib", "style.ts"), "utf8");
-// the fidelity pass runs in a light-scheme browser, so it expects the light palette
-const STATUS_COLOR = JSON.parse(styleSrc.match(/STATUS_COLOR_LIGHT = (\[[^\]]+\])/)[1].replace(/,\s*\]/, "]"));
+const streetsSrc = fs.readFileSync(path.join(ROOT, "src", "lib", "streets.ts"), "utf8");
+const basemapSrc = fs.readFileSync(path.join(ROOT, "src", "lib", "basemap", "index.ts"), "utf8");
+const liberty = JSON.parse(fs.readFileSync(path.join(ROOT, "src", "lib", "basemap", "liberty.json"), "utf8"));
 const rnd = (() => { let s = 42; return (n) => (s = (s * 1103515245 + 12345) % 2 ** 31) % n; })();
 
 // basemap tiles are optional and may be unreachable; anything else in the console is a failure
 const ignorable = (msg) => /cartocdn|basemap tiles unavailable/i.test(msg.text() + (msg.location()?.url ?? ""));
 
-async function waitForMap(page) {
-  await page.waitForFunction(() => window.__rpMap && window.__rpMap.getFeatureState({ source: "segments", id: 0 }).color,
-                             null, { timeout: 20000 });
+async function waitForStreets(page) {
+  await page.waitForFunction(() => window.__rpStreetMap?.queryRenderedFeatures({ layers: ["streets"] }).length > 1000, null, { timeout: 60000 });
 }
 
 async function setHour(page, h) {
-  await page.locator("#hour").fill(String(h));
-  await page.waitForFunction((h) => document.querySelector("#hour").value === String(h), h);
+  await page.locator("[data-testid=hour]:visible").fill(String(h));
+  await page.waitForFunction((h) => [...document.querySelectorAll("[data-testid=hour]")].some((e) => e.offsetParent && e.value === String(h)), h);
   await page.waitForTimeout(60);
-}
-
-// ---- route cards against the source CSV (not the bundle), as P2's exit condition requires
-const CSV = path.resolve(ROOT, "..", "routepulse-dataset", "data", "route_assessments.csv");
-
-function loadAssessments() {
-  const [head, ...lines] = fs.readFileSync(CSV, "utf8").trim().split(/\r?\n/);
-  const cols = head.split(",");
-  const t0 = Date.parse(manifest.start + "Z");
-  const map = new Map();
-  for (const line of lines) {
-    const v = line.split(",");
-    const r = Object.fromEntries(cols.map((c, i) => [c, v[i]]));
-    const hour = Math.round((Date.parse(r.timestamp + "Z") - t0) / 3600_000);
-    map.set(`${r.scenario_id}|${hour}|${r.route_id}`, r);
-  }
-  return map;
-}
-
-async function verifyRouteCards(page) {
-  console.log("route cards match route_assessments.csv");
-  const rows = loadAssessments();
-  const routes = JSON.parse(fs.readFileSync(path.join(DATA, "routes.json")));
-  const num = (s) => (s === "" || s === undefined ? "" : String(Number(s)));
-  let cases = 0, bad = [];
-  const scs = ["SC01", "SC02", "SC03", "SC04", "SC05"];
-  for (const sc of scs) {
-    await page.selectOption("select >> nth=0", sc);
-    await page.waitForTimeout(300);
-    for (let k = 0; k < 10; k++) {
-      const h = rnd(H), od = routes.od_pairs[rnd(routes.od_pairs.length)];
-      await page.getByLabel("Origin to destination").selectOption(od.id);
-      await setHour(page, h);
-      const at = Math.floor(h / 3) * 3;   // latest 3-hourly assessment not after h
-      const cards = await page.$$eval(".card", (els) => els.map((e) => ({ ...e.dataset })));
-      cases++;
-      if (cards.length !== od.routes.length) { bad.push(`${sc} h${h} ${od.id}: ${cards.length} cards`); continue; }
-      for (const c of cards) {
-        const r = rows.get(`${sc}|${at}|${c.route}`);
-        const want = { status: r.route_status, eta: num(r.eta_min), delay: num(r.delay_min),
-                       risk: num(r.climate_risk_score), band: r.risk_band, closed: num(r.segments_closed),
-                       recommended: String(r.recommended === "True") };
-        const got = { status: c.status, eta: num(c.eta), delay: num(c.delay), risk: num(c.risk),
-                      band: c.band, closed: num(c.closed), recommended: c.recommended };
-        for (const key of Object.keys(want)) {
-          if (want[key] !== got[key]) bad.push(`${sc} h${h} ${c.route} ${key}: ${got[key]} vs ${want[key]}`);
-        }
-      }
-    }
-  }
-  check(`${cases} random (scenario, hour, OD) cases: every card equals the CSV row`, bad.length === 0,
-        bad.slice(0, 3).join(" | "));
-
-  // the reason never contradicts the flag, and focusing a card highlights its route
-  const reason = await page.getByTestId("reason").innerText();
-  const best = await page.$eval(".card[data-recommended='true']", (e) => e.dataset.route).catch(() => null);
-  check("recommendation reason names the flagged route", best ? reason.includes(best) : /No route/.test(reason),
-        reason.slice(0, 90));
-  const first = page.locator(".card").first();
-  const rid = await first.getAttribute("data-route");
-  await first.focus();
-  await page.waitForTimeout(100);
-  const segIds = routes.routes[rid].segments;
-  const net = JSON.parse(fs.readFileSync(path.join(DATA, "network.json")));
-  const ixs = segIds.map((s) => net.segments.find((x) => x.id === s).ix);
-  const hl = await page.evaluate((ixs) => ixs.map((i) => window.__rpMap.getFeatureState({ source: "segments", id: i }).hl), ixs);
-  check("keyboard focus on a card highlights its route on the map", hl.every(Boolean), `${rid}: ${hl}`);
-}
-
-async function verifyExplain(page) {
-  console.log("explanations");
-  for (const [id, label] of [["commuter", "Commuter"], ["bus_operator", "Bus operator"], ["transport_planner", "Planner"]]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await page.getByRole("button", { name: /^Explain/ }).click();
-    const ex = page.getByTestId("explanation");
-    await ex.waitFor({ timeout: 15000 });
-    await page.waitForFunction(() => !document.querySelector(".explain")?.getAttribute("aria-busy")?.includes("true"));
-    const info = await ex.evaluate((e) => ({
-      validated: e.dataset.validated, source: e.dataset.source,
-      sentences: e.querySelectorAll(".sentences li").length,
-      chips: e.querySelectorAll(".chip").length,
-      evidence: e.querySelectorAll(".evidence").length,
-      failed: e.querySelectorAll(".sentences .error").length,
-    }));
-    check(`${id}: explanation is validated, every sentence carries chips and evidence`,
-          info.validated === "true" && info.sentences > 1 && info.evidence === info.sentences
-          && info.chips >= info.sentences && info.failed === 0,
-          JSON.stringify(info));
-  }
-  const h = Number(await page.locator("#hour").inputValue());
-  await setHour(page, (h + 7) % H);
-  const stale = await page.getByText("changed since this explanation").count();
-  check("changing the hour marks the explanation as out of date", stale === 1);
-}
-
-// ---- P5: lenses, story, contrast, reduced motion
-const DATASET = path.resolve(ROOT, "..", "routepulse-dataset", "data");
-const audienceBtn = (page, label) => page.locator(".audience").getByRole("button", { name: label, exact: true });
-
-async function goto(page, sc, od, h) {
-  await page.selectOption("select >> nth=0", sc);
-  await page.waitForTimeout(300);
-  await page.getByLabel("Origin to destination").selectOption(od);
-  await setHour(page, h);
-}
-
-async function verifyLenses(page) {
-  console.log("audience lenses");
-  const story = JSON.parse(fs.readFileSync(path.join(DATA, "story.json")));
-  const sw = story.steps[2];
-
-  // commuter: go at the story's switch, no-go when every route is blocked
-  await audienceBtn(page, "Commuter").click();
-  await goto(page, story.scenario, story.od_pair, sw.hour);
-  const go = await page.getByTestId("lens").evaluate((e) => ({ v: e.dataset.verdict, t: e.innerText }));
-  check("commuter: Go with the recommended route at the story switch", go.v === "go" && go.t.includes(sw.route), go.t.split("\n")[0]);
-  const rows = loadAssessments();
-  let blocked = null;
-  for (const [k, r] of rows) {
-    const [sc, h, rid] = k.split("|");
-    if (r.od_pair_id !== story.od_pair || sc !== "SC04") continue;
-    const all = JSON.parse(fs.readFileSync(path.join(DATA, "routes.json"))).od_pairs.find((o) => o.id === story.od_pair).routes;
-    if (all.every((x) => rows.get(`${sc}|${h}|${x}`).route_status === "blocked")) { blocked = Number(h); break; }
-    void rid;
-  }
-  if (blocked !== null) {
-    await goto(page, "SC04", story.od_pair, blocked);
-    const ng = await page.getByTestId("lens").evaluate((e) => e.dataset.verdict);
-    check("commuter: No-go when every route for the pair is blocked", ng === "no-go", `SC04 h${blocked}`);
-  }
-
-  // operator: tallies equal bus_trips.csv for the same windows
-  await audienceBtn(page, "Bus operator").click();
-  await goto(page, "SC04", "OD001", 207);
-  const [head, ...lines] = fs.readFileSync(path.join(DATASET, "bus_trips.csv"), "utf8").trim().split(/\r?\n/);
-  const cols = head.split(",");
-  const t0 = Date.parse(manifest.start + "Z");
-  const trips = lines.map((l) => Object.fromEntries(l.split(",").map((v, i) => [cols[i], v])))
-    .filter((t) => t.scenario_id === "SC04")
-    .map((t) => ({ ...t, hour: Math.round((Date.parse(t.scheduled_departure + "Z") - t0) / 3600_000) }));
-  const shown = await page.$$eval("tr[data-service]", (els) => els.map((e) => ({ ...e.dataset })));
-  let badBus = 0;
-  for (const s of shown) {
-    const inWin = trips.filter((t) => t.bus_route_id === s.service && t.hour >= Number(s.from) && t.hour < Number(s.to));
-    if (inWin.length !== Number(s.departures) || inWin.filter((t) => t.outcome === "cancelled").length !== Number(s.cancelled)) badBus++;
-  }
-  check("bus operator: departures and cancellations equal bus_trips.csv", shown.length > 0 && badBus === 0,
-        `${shown.length} rows, ${badBus} wrong`);
-
-  // planner: scenario stats equal the README calibration values for SC04
-  await audienceBtn(page, "Planner").click();
-  const peak = await page.getByTestId("peak").innerText();
-  const share = await page.getByTestId("share").innerText();
-  check("planner: SC04 peak closures and closed share match the dataset README (46, 7.28 %)",
-        peak.startsWith("46 ") && share === "7.28 %", `${peak} | ${share}`);
-  const vuln = JSON.parse(fs.readFileSync(path.join(DATA, "vulnerability.json")));
-  const top = vuln.segments[0];
-  await page.locator(".vuln-row").first().click();
-  const net = JSON.parse(fs.readFileSync(path.join(DATA, "network.json")));
-  const ix = net.segments.find((x) => x.id === top.segment_id).ix;
-  const hl = await page.evaluate((i) => window.__rpMap.getFeatureState({ source: "segments", id: i }).hl, ix);
-  check("planner: clicking the top vulnerable segment highlights it on the map", hl === true, top.segment_id);
-  await page.locator(".vuln-row").first().click();
-  await audienceBtn(page, "Commuter").click();
-}
-
-async function verifyStory(page) {
-  console.log("guided story");
-  const story = JSON.parse(fs.readFileSync(path.join(DATA, "story.json")));
-  await page.getByRole("button", { name: "Guided story" }).click();
-  const card = page.getByTestId("story");
-  await card.waitFor();
-  const state = async () => ({
-    sc: await page.locator("select >> nth=0").inputValue(),
-    od: await page.getByLabel("Origin to destination").inputValue(),
-    hour: Number(await page.locator("#hour").inputValue()),
-    text: await card.innerText(),
-  });
-  for (let i = 0; i < story.steps.length; i++) {
-    const st = story.steps[i];
-    await page.waitForFunction((n) => document.querySelector("[data-testid=story]")?.dataset.step === String(n), i);
-    await page.waitForFunction(() => !document.querySelector("[data-testid=story]")?.innerText.includes("Loading"));
-    const s = await state();
-    check(`story step ${i + 1} "${st.title}" sets ${story.scenario}, ${story.od_pair}, hour ${st.hour}`,
-          s.sc === story.scenario && s.od === story.od_pair && s.hour === st.hour);
-    if (st.focus === "switch") {
-      check("story switch step names the blocked and the new route", s.text.includes(st.previous_route) && s.text.includes("blocked")
-            && s.text.includes(st.route), s.text.split("\n")[2]?.slice(0, 120));
-    }
-    if (st.focus === "explain") {
-      const ex = page.getByTestId("explanation");
-      await ex.waitFor({ timeout: 15000 });
-      const v = await ex.evaluate((e) => e.dataset.validated);
-      check("story's last step produces a validated explanation automatically", v === "true");
-    }
-    await card.getByRole("button", { name: i === story.steps.length - 1 ? "Finish" : "Next" }).click();
-  }
-  check("Finish closes the story", (await page.getByTestId("story").count()) === 0);
 }
 
 function contrastChecks() {
@@ -253,12 +53,18 @@ function contrastChecks() {
     .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
     .reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
   const cr = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
-  const pal = (name) => JSON.parse(styleSrc.match(new RegExp(`${name} = (\\[[^\\]]+\\])`))[1].replace(/,\s*\]/, "]"));
-  const bg = Object.fromEntries([...styleSrc.matchAll(/(light|dark): "(#[0-9a-f]{6})"/gi)].map((m) => [m[1], m[2]]));
-  for (const [scheme, name] of [["light", "STATUS_COLOR_LIGHT"], ["dark", "STATUS_COLOR_DARK"]]) {
-    const ratios = pal(name).map((c) => cr(c, bg[scheme]));
-    check(`${scheme}: every road status colour has ≥ 3:1 contrast with the map background`, Math.min(...ratios) >= 3,
-          `min ${Math.min(...ratios).toFixed(2)}`);
+  // the risk-band colours the street map draws (BANDS in dark, BAND_LIGHT in light) against each basemap's land colour
+  const hexes = (src) => [...src.matchAll(/"(#[0-9a-f]{6})"/gi)].map((m) => m[1]);
+  const bandsAt = streetsSrc.indexOf("export const BANDS");
+  const pal = {
+    dark: hexes(streetsSrc.slice(bandsAt, streetsSrc.indexOf("];", bandsAt))),
+    light: hexes(streetsSrc.match(/const BAND_LIGHT[^\n]+/)[0]),
+  };
+  const bg = { light: liberty.layers[0].paint["background-color"], dark: basemapSrc.match(/\^background\$\/, \{ "background-color": "(#[0-9a-f]{6})"/)[1] };
+  for (const scheme of ["light", "dark"]) {
+    const ratios = pal[scheme].map((c) => cr(c, bg[scheme]));
+    check(`${scheme}: every risk-band road colour has ≥ 3:1 contrast with the map background`, ratios.length === 5 && Math.min(...ratios) >= 3,
+          `${ratios.length} colours on ${bg[scheme]}, min ${Math.min(...ratios).toFixed(2)}`);
   }
 }
 
@@ -279,7 +85,7 @@ async function verifyStreets(browser) {
   page.on("console", (m) => { if (m.type() === "error" && !ignorable(m)) errors.push(m.text()); });
   page.on("pageerror", (e) => errors.push(String(e)));
   const t0 = Date.now();
-  await page.goto(BASE);
+  await page.goto(MAX);
   await page.waitForFunction(() => window.__rpStreetMap?.queryRenderedFeatures({ layers: ["streets"] }).length > 5000, null, { timeout: 60000 });
   const loadMs = Date.now() - t0;
   // 6 s on an idle machine; UI_LOAD_BUDGET_MS raises it explicitly when another job holds the CPU
@@ -287,7 +93,7 @@ async function verifyStreets(browser) {
   check(`street map shows thousands of streets within ${budget / 1000} s (dev server)`, loadMs < budget, `${loadMs} ms`);
 
   // the opening hour's colours equal the decoded sparse file
-  const hour = Number(await page.locator("#hour").inputValue());
+  const hour = Number(await page.locator("[data-testid=hour]:visible").inputValue());
   const k = Math.floor(hour / 3);
   const listed = Array.from(idx.subarray(offs[k], offs[k + 1]));
   const sample = Array.from({ length: 300 }, () => listed[rnd(listed.length)]);
@@ -357,7 +163,7 @@ async function verifyStreets(browser) {
 
   const m = await browser.newContext({ viewport: { width: 375, height: 812 }, colorScheme: "dark", isMobile: true, hasTouch: true });
   const mp = await m.newPage();
-  await mp.goto(BASE);
+  await mp.goto(MAX);
   await mp.waitForSelector("[data-testid=street]", { timeout: 60000 });
   await mp.waitForTimeout(1500);
   const o = await mp.evaluate(() => ({ overflow: document.documentElement.scrollWidth - innerWidth,
@@ -367,7 +173,7 @@ async function verifyStreets(browser) {
   await m.close();
 }
 
-// ---- control room (/ops)
+// ---- control room (/control-room)
 async function verifyOps(browser) {
   console.log("control room");
   const cx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
@@ -375,7 +181,7 @@ async function verifyOps(browser) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error" && !ignorable(m)) errors.push(m.text()); });
-  await page.goto(`${BASE}/ops`);
+  await page.goto(`${BASE}/control-room`);
   await page.waitForSelector("[data-testid=ops-target]", { timeout: 60000 });
   await setHour(page, 210);
   await page.waitForTimeout(400);
@@ -388,13 +194,13 @@ async function verifyOps(browser) {
   await pick.click();
   check("clicking a threat locks it as the target", (await page.getByTestId("ops-target").getAttribute("data-street")) === want, want);
   await page.keyboard.press("ArrowRight");   // focus is still on the clicked threat button
-  check("arrow key steps the console clock by 3 h", (await page.locator("#hour").inputValue()) === "213");
+  check("arrow key steps the console clock by 3 h", (await page.locator("[data-testid=hour]:visible").inputValue()) === "213");
   const fit = await page.evaluate(() => {
     const col = document.querySelector(".ops-col"), tiles = document.querySelectorAll(".ops-sector");
     return { scrolls: col.scrollHeight > col.clientHeight + 1, lastBottom: tiles[tiles.length - 1].getBoundingClientRect().bottom, h: innerHeight };
   });
   check("1440×900: threats and all 13 sectors fit without scrolling", !fit.scrolls && fit.lastBottom <= fit.h, `last sector at ${Math.round(fit.lastBottom)} px`);
-  await page.locator("#hour").fill("335");
+  await page.locator("[data-testid=hour]:visible").fill("335");
   await page.waitForTimeout(400);
   const last = await page.$$eval(".ops-route-main small", (els) => els.map((e) => e.textContent));
   check("on the last step routes say there is no risk estimate", last.length > 0 && last.every((t) => t.includes("no estimate")), last[0] ?? "no routes");
@@ -404,7 +210,7 @@ async function verifyOps(browser) {
 
   const m = await browser.newContext({ viewport: { width: 375, height: 812 }, colorScheme: "dark", isMobile: true, hasTouch: true });
   const mp = await m.newPage();
-  await mp.goto(`${BASE}/ops`);
+  await mp.goto(`${BASE}/control-room`);
   await mp.waitForSelector("[data-testid=ops-target]", { timeout: 60000 });
   const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   check("control room at 375 px: no horizontal scroll", overflow <= 0, `${overflow}px`);
@@ -419,7 +225,7 @@ async function verifyLocation(browser) {
     const page = await ctx.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
-    await page.goto(BASE);
+    await page.goto(MAX);
     await page.waitForSelector("[data-testid=street]", { timeout: 60000 });
     return { ctx, page, errors };
   };
@@ -502,107 +308,170 @@ async function verifyLocation(browser) {
   await m.ctx.close();
 }
 
+// ---- Simple mode (/simple): the v2.0 planner layout on the shared street simulation
+async function verifySimple(browser) {
+  console.log("simple mode");
+  const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await cx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => { if (m.type() === "error" && !ignorable(m)) errors.push(m.text()); });
+  await page.goto(`${BASE}/simple`);
+  await page.waitForFunction(() => document.querySelectorAll(".rps-card").length > 0, null, { timeout: 60000 });
+  const cards = await page.$$eval(".rps-card", (els) => els.map((e) => e.dataset.route));
+  check("simple: Anna Nagar → Marina Beach gives lettered route cards", cards.length >= 1 && cards.every((c) => /^[A-C]$/.test(c)), cards.join(","));
+  check("simple: exactly one card is marked best", (await page.locator(".rps-card.best").count()) === 1);
+  const winBalanced = await page.getByTestId("simple-cards").getAttribute("data-winner");
+  await page.getByRole("button", { name: "Fastest", exact: true }).click();
+  const times = await page.$$eval(".rps-card .rps-big", (els) => els.map((e) => parseFloat(e.textContent)));
+  const bestTime = parseFloat(await page.locator(".rps-card.best .rps-big").textContent());
+  check("simple: Fastest picks the lowest travel time", bestTime <= Math.min(...times) + 1e-9, `${bestTime} of ${times.join(", ")}`);
+  check("simple: summary bar names the best route", (await page.getByTestId("simple-summary").innerText()).includes("Best for Fastest"));
+  await page.getByRole("button", { name: "Balanced", exact: true }).click();
+  check("simple: switching priority back restores the same winner", (await page.getByTestId("simple-cards").getAttribute("data-winner")) === winBalanced, winBalanced);
+  // local street search: the planner knows every named street
+  await page.getByTestId("simple-to").fill("Kamarajar Prom");
+  const sug = await page.locator(".rps-sug").first().innerText();
+  check("simple: typing a street name suggests it from the street data", sug.startsWith("Kamarajar Promenade"), sug.split("\n")[0]);
+  await page.locator(".rps-sug").first().click();
+  await page.waitForFunction(() => document.querySelectorAll(".rps-card, .rps-empty").length > 0);
+  check("simple: choosing the street sets the destination", (await page.getByTestId("simple-to").inputValue()) === "Kamarajar Promenade");
+  // vehicle limits: a bus never uses a minor street, a bike never crosses water deeper than 12 cm
+  await page.locator("select").first().selectOption("bus");
+  await page.waitForTimeout(300);
+  check("simple: bus routes or says why not", (await page.locator(".rps-card, .rps-empty.warn").count()) > 0);
+  // layers, legend and info live in map dropdowns, like Max mode; one open at a time, Escape closes
+  const stage = page.locator(".rps-tools");
+  check("simple: dropdowns start closed", (await page.locator(".rps-menu-panel:visible").count()) === 0);
+  await stage.getByRole("button", { name: "Layers" }).click();
+  const water = page.locator("#rps-menu-layers").getByRole("button", { name: "Water depth" });
+  await water.click();
+  check("simple: Layers dropdown toggles a layer", (await water.getAttribute("aria-pressed")) === "false");
+  await water.click();
+  await stage.getByRole("button", { name: "Legend" }).click();
+  check("simple: opening Legend closes Layers", await page.locator("#rps-menu-legend").isVisible() && !(await page.locator("#rps-menu-layers").isVisible()));
+  await page.keyboard.press("Escape");
+  check("simple: Escape closes the dropdown", (await page.locator(".rps-menu-panel:visible").count()) === 0);
+  await page.locator(".rp-rail").getByRole("button", { name: "Info" }).click();
+  check("simple: the rail's Info button opens the Info dropdown", await page.locator("#rps-menu-info").isVisible());
+  await page.keyboard.press("Escape");
+  // inspector
+  await page.locator(".rp-rail").getByRole("button", { name: /Inspect/ }).click();
+  check("simple: Inspect opens the street inspector", await page.getByTestId("simple-inspect").isVisible());
+  check("simple: no console errors", errors.length === 0, errors.slice(0, 2).join(" | "));
+  await page.screenshot({ path: path.join(OUT, "simple-desktop.png") });
+  await cx.close();
+
+  const m = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+  const mp = await m.newPage();
+  await mp.goto(`${BASE}/simple`);
+  await mp.waitForFunction(() => document.querySelectorAll(".rps-card").length > 0, null, { timeout: 60000 });
+  const o = await mp.evaluate(() => ({ overflow: document.documentElement.scrollWidth - innerWidth, mapH: document.querySelector(".rps-stage").getBoundingClientRect().height }));
+  check("simple at 375 px: no horizontal scroll, map visible", o.overflow <= 0 && o.mapH >= 300, JSON.stringify(o));
+  await mp.screenshot({ path: path.join(OUT, "simple-mobile.png"), fullPage: true });
+  await m.close();
+}
+
+// ---- hero (/) and switching between modes
+async function verifyHeroAndModes(browser) {
+  console.log("hero and modes");
+  const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await cx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => { if (m.type() === "error" && !ignorable(m)) errors.push(m.text()); });
+  await page.goto(BASE);
+  await page.waitForFunction(() => !!window.__rpHeroMap, null, { timeout: 60000 });
+  await page.waitForTimeout(6000);   // street data loads, then the drive starts
+  const c0 = await page.evaluate(() => window.__rpHeroMap.getCenter().toArray());
+  await page.waitForTimeout(1500);
+  const c1 = await page.evaluate(() => window.__rpHeroMap.getCenter().toArray());
+  check("hero: the car drives (camera moves along the beach road)", Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 1e-5, `${c0} → ${c1}`);
+  check("hero: three mode cards", (await page.locator(".hero-card").count()) === 3);
+  check("hero: credits name OpenStreetMap, Overture, OpenFreeMap and say it is not Google", /OpenStreetMap[\s\S]*Overture[\s\S]*OpenFreeMap[\s\S]*not affiliated with Google/.test(await page.locator(".hero-credits").innerText()));
+  await page.getByRole("button", { name: "Pause drive" }).click();
+  const p0 = await page.evaluate(() => window.__rpHeroMap.getCenter().toArray());
+  await page.waitForTimeout(800);
+  const p1 = await page.evaluate(() => window.__rpHeroMap.getCenter().toArray());
+  check("hero: Pause stops the drive", Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 1e-7);
+  await page.screenshot({ path: path.join(OUT, "hero.png") });
+  // mode switching through the shared rail, there and back, twice
+  await page.locator(".hero-card", { hasText: "Simple mode" }).click();
+  await page.waitForSelector(".rps-card", { timeout: 60000 });
+  // in-app navigation can load maplibre-gl.css after a mode's own CSS; every map must still fill its frame
+  const mapH = () => page.evaluate(() => Math.min(...[...document.querySelectorAll(".maplibregl-map")].map((e) => e.getBoundingClientRect().height)));
+  const heights = [];
+  for (let k = 0; k < 2; k++) {
+    await page.locator(".rp-rail").getByRole("listitem").filter({ hasText: "Max" }).click();
+    await page.waitForSelector("[data-testid=street]", { timeout: 60000 });
+    heights.push(["max", await mapH()]);
+    await page.locator(".rp-rail").getByRole("listitem").filter({ hasText: "Control" }).click();
+    await page.waitForSelector("[data-testid=ops-target]", { timeout: 60000 });
+    heights.push(["control", await mapH()]);
+    await page.locator(".rp-rail").getByRole("listitem").filter({ hasText: "Simple" }).click();
+    await page.waitForSelector(".rps-card", { timeout: 60000 });
+    heights.push(["simple", await mapH()]);
+  }
+  check("modes: after every switch the map fills its frame (≥ 300 px tall)", heights.every(([, h]) => h >= 300), heights.map(([m, h]) => `${m} ${Math.round(h)}`).join(", "));
+  check("modes: Simple → Max → Control room → Simple, twice, without errors", errors.length === 0, errors.slice(0, 2).join(" | "));
+  // same as the rail's theme button (src/lib/useDark.ts setTheme), but usable while a page is still loading
+  const flipTheme = () => page.evaluate(() => {
+    const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    localStorage.setItem("rp-theme", t); document.documentElement.dataset.theme = t; window.dispatchEvent(new Event("rp-theme"));
+  });
+  // regression: leaving Max while driving, and switching or flipping the theme before a map has drawn, used to crash
+  await page.locator(".rp-rail").getByRole("listitem").filter({ hasText: "Max" }).click();
+  await page.waitForSelector("[data-testid=street]", { timeout: 60000 });
+  await page.getByRole("button", { name: /Drive route/ }).first().click();
+  await page.waitForTimeout(800);
+  const ready = { Control: "[data-testid=ops-target]", Simple: ".rps-card", Max: "[data-testid=street]" };
+  for (const mode of ["Control", "Simple", "Max", "Control", "Max", "Simple"]) {
+    await page.locator(".rp-rail").getByRole("listitem").filter({ hasText: mode }).click();
+    await flipTheme();   // lands while the new map is still loading
+    await page.locator(`${ready[mode]}:visible`).first().waitFor({ timeout: 60000 });
+  }
+  check("modes: leave Max mid-drive, then fast switches with theme flips, without errors", errors.length === 0, errors.slice(0, 2).join(" | "));
+  // a revisited mode is rebuilt from a hidden page: its streets must be coloured again and its basemap in the current theme
+  await flipTheme();
+  await page.locator(".rp-rail").getByRole("listitem").filter({ hasText: "Max" }).click();
+  // Max comes back still driving (zoomed in), so wait for any drawn streets, not the city-wide count
+  await page.waitForFunction(() => window.__rpStreetMap?.loaded() && window.__rpStreetMap.queryRenderedFeatures({ layers: ["streets"] }).length > 0, null, { timeout: 60000 });
+  await page.getByRole("button", { name: "Exit" }).click().catch(() => {});
+  await page.evaluate(() => window.__rpStreetMap.jumpTo({ center: [80.25, 13.05], zoom: 12.5, pitch: 0, bearing: 0 }));
+  await page.waitForFunction(() => window.__rpStreetMap.loaded(), null, { timeout: 30000 });
+  await page.waitForTimeout(500);
+  const back = await page.evaluate(() => {
+    const m = window.__rpStreetMap, dark = document.documentElement.dataset.theme === "dark";
+    const coloured = m.queryRenderedFeatures({ layers: ["streets"] }).some((f) => m.getFeatureState({ source: "streets", sourceLayer: "streets", id: f.id }).b != null);
+    return { dark, coloured, bg: m.getPaintProperty("bm-background", "background-color") };
+  });
+  check("modes: back in Max, streets are coloured and the basemap follows the theme", back.coloured && (back.bg === "#0b1520") === back.dark, JSON.stringify(back));
+  await page.goto(`${BASE}/ops`);
+  check("old /ops address opens the control room", page.url().endsWith("/control-room"), page.url());
+  await cx.close();
+}
+
 async function main() {
   if (!EXE) throw new Error("No Edge/Chrome found; set BROWSER_PATH");
   const browser = await chromium.launch({ executablePath: EXE, headless: true });
-
-  // ---------------------------------------------------------------- data fidelity
-  console.log("map shows the bundle");
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await ctx.newPage();
-  const errors = [];
-  page.on("console", (m) => { if (m.type() === "error" && !ignorable(m)) errors.push(m.text()); });
-  page.on("pageerror", (e) => errors.push(String(e)));
-  await page.goto(`${BASE}/corridors`);
-  await waitForMap(page);
-
-  for (const sc of ["SC01", "SC02", "SC03", "SC04", "SC05"]) {
-    await page.selectOption("select", sc);
-    await page.waitForTimeout(400);
-    const c = cube(sc), r = rain(sc);
-    let bad = 0, checked = 0, badRain = 0, badFc = 0;
-    for (let k = 0; k < 4; k++) {
-      const h = rnd(H);
-      await setHour(page, h);
-      const segs = Array.from({ length: 15 }, () => rnd(S));
-      const cells = Array.from({ length: 8 }, () => rnd(C));
-      const got = await page.evaluate(({ segs, cells }) => ({
-        seg: segs.map((s) => window.__rpMap.getFeatureState({ source: "segments", id: s }).color),
-        rain: cells.map((c) => window.__rpMap.getFeatureState({ source: "rain", id: c }).rain),
-      }), { segs, cells });
-      segs.forEach((s, i) => { checked++; if (got.seg[i] !== STATUS_COLOR[c[(0 * H + h) * S + s]]) bad++; });
-      cells.forEach((cc, i) => { if (got.rain[i] !== r[h * C + cc]) badRain++; });
-    }
-    check(`${sc}: ${checked} segment colours match the status in the bundle`, bad === 0, `${bad} wrong`);
-    check(`${sc}: rain cells match the raster`, badRain === 0, `${badRain} wrong`);
-
-    // forecast layer: grey exactly where the bundle has no forecast
-    await page.getByRole("button", { name: "Forecast +3 h" }).click();
-    for (const h of [10, 100, 334]) {
-      await setHour(page, h);
-      const cols = await page.evaluate((n) => Array.from({ length: n },
-        (_, s) => window.__rpMap.getFeatureState({ source: "segments", id: s }).color), S);
-      cols.forEach((col, s) => {
-        const none = c[(4 * H + h) * S + s] === manifest.no_forecast_value;
-        if (none !== (col === "#8a8f98")) badFc++;
-      });
-    }
-    check(`${sc}: forecast layer is grey exactly where no forecast exists`, badFc === 0, `${badFc} wrong`);
-    await page.getByRole("button", { name: "Now" }).click();
-  }
-
-  // the closed-count readout matches the bundle
-  await page.selectOption("select", "SC04");
-  await page.waitForTimeout(400);
-  const c4 = cube("SC04");
-  let peakH = 0, peak = -1;
-  for (let h = 0; h < H; h++) {
-    let n = 0;
-    for (let s = 0; s < S; s++) if (c4[h * S + s] >= manifest.closed_min_code) n++;
-    if (n > peak) { peak = n; peakH = h; }
-  }
-  await setHour(page, peakH);
-  const readout = await page.locator(".scrubber-row .small").innerText();
-  check("closed-segment readout matches the bundle at SC04's peak", readout.startsWith(`${peak} segment`),
-        `"${readout}" vs ${peak}`);
-
-  // keyboard: arrow keys move the slider
-  await page.locator("#hour").focus();
-  await page.keyboard.press("ArrowRight");
-  const v = await page.locator("#hour").inputValue();
-  check("arrow key moves the slider one hour", v === String(peakH + 1), `value ${v}`);
-
-  // play advances time
-  await setHour(page, 0);
-  await page.getByRole("button", { name: "Play" }).click();
-  await page.waitForTimeout(1500);
-  await page.getByRole("button", { name: "Pause" }).click();
-  const after = Number(await page.locator("#hour").inputValue());
-  check("Play advances the hour", after > 0, `hour ${after} after 1.5 s`);
-
-  await verifyRouteCards(page);
-  await verifyExplain(page);
-  await verifyLenses(page);
-  await verifyStory(page);
-
-  check("no console errors (basemap tile failures excluded)", errors.length === 0, errors.slice(0, 3).join(" | "));
-  await ctx.close();
 
   contrastChecks();
   await verifyStreets(browser);
   await verifyLocation(browser);
   await verifyOps(browser);
+  await verifySimple(browser);
+  await verifyHeroAndModes(browser);
 
   // reduced motion: playback must still work
   console.log("reduced motion");
   {
     const cx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
     const p = await cx.newPage();
-    await p.goto(`${BASE}/corridors`);
-    await waitForMap(p);
-    await p.getByRole("button", { name: "Play" }).click();
+    await p.goto(MAX);
+    await waitForStreets(p);
+    await p.locator(".scrubber").getByRole("button", { name: "Play" }).click();
     await p.waitForTimeout(1200);
-    const hr = Number(await p.locator("#hour").inputValue());
+    const hr = Number(await p.locator("[data-testid=hour]:visible").inputValue());
     check("with prefers-reduced-motion, Play still advances the hour", hr > 0, `hour ${hr}`);
     await cx.close();
   }
@@ -614,23 +483,23 @@ async function main() {
       const cx = await browser.newContext({ viewport: vp, colorScheme: scheme, isMobile: name === "mobile",
                                             hasTouch: name === "mobile" });
       const p = await cx.newPage();
-      await p.goto(`${BASE}/corridors`);
-      await waitForMap(p);
-      await setHour(p, peakH);
+      await p.goto(MAX);
+      await waitForStreets(p);
+      await setHour(p, 200);
       await p.waitForTimeout(500);
       const m = await p.evaluate(() => ({
         overflow: document.documentElement.scrollWidth - window.innerWidth,
-        mapH: document.querySelector(".map").getBoundingClientRect().height,
+        mapH: document.querySelector(".sv-map").getBoundingClientRect().height,
       }));
       check(`${name}/${scheme}: no horizontal scroll`, m.overflow <= 0, `${m.overflow}px`);
       check(`${name}/${scheme}: map is visible`, m.mapH >= 300, `${Math.round(m.mapH)}px tall`);
       if (name === "mobile") {
         // real interaction on the small viewport: tap a segment area, drag the slider
-        const box = await p.locator("#hour").boundingBox();
+        const box = await p.locator("[data-testid=hour]:visible").boundingBox();
         await p.mouse.click(box.x + box.width * 0.25, box.y + box.height / 2);
-        const val = Number(await p.locator("#hour").inputValue());
+        const val = Number(await p.locator("[data-testid=hour]:visible").inputValue());
         check(`${name}/${scheme}: tapping the slider moves time`, Math.abs(val - 0.25 * (H - 1)) < 25, `hour ${val}`);
-        await p.locator(".map").scrollIntoViewIfNeeded();
+        await p.locator(".sv-map").scrollIntoViewIfNeeded();
       }
       await p.screenshot({ path: path.join(OUT, `p1-${name}-${scheme}.png`), fullPage: name === "mobile" });
       await cx.close();

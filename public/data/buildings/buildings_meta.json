@@ -1,0 +1,10 @@
+{
+ "source": "Overture Maps buildings (OpenStreetMap, Google Open Buildings, Microsoft ML Buildings)",
+ "attribution": "Buildings \u00a9 OpenStreetMap contributors, Google, Microsoft via Overture Maps (ODbL / CDLA)",
+ "count": 605401,
+ "estimated": 597406,
+ "floor_m": 3.2,
+ "height_note": "Most heights are estimated from footprint area, not measured.",
+ "minzoom": 13,
+ "maxzoom": 14
+}

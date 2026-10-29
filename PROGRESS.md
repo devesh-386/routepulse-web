@@ -102,3 +102,31 @@ While model training holds the CPU (100 % load), the 33,600-template test needs 
 | Vulnerability ranking (#3) | `build_bundle.py` ranks by `worlds_with_closure_pct`, the value shown. On the current CSV this is strictly descending over 83 segments and lifts a 25.8 % segment from below rank 8 to rank 2. Shipped JSON is fixed at the next bundle rebuild (after training; `public/data` is never hand-edited). |
 | Reproducibility (#8) | `--draws` default 10,000 (as shipped); "held-out worlds" label read from metrics; street forecast noise seeded per scenario id; `allow_nan=False` + NaN guard in street outputs. Seed change alters street forecast noise on the next rebuild. |
 | Contract (#8) | `verify_bundle.py` checks streets.bin sha256, every scenario's street files, no NaN in street_forecast.json, and ranking order. Today: all pass except ranking (fails at ranks 3, 8, 13, 17, 18 until rebuild). |
+
+## Mode-switch transition + loading curtain (2026-10-28) — built, switched OFF
+
+| Piece | Evidence |
+|---|---|
+| Source | Picked from the Animmaster pack in `D:\New folder`: Page Transitions/5 (SVG stroke transition) and Hero Animations/5 (curtain preloader). Ported from GSAP to the Web Animations API, so no new dependency. |
+| Transition | `src/components/shell/RouteTransition.tsx`: a provider in `layout.tsx` plus `TransitionLink` (uses Link's `onNavigate`), used by the hero and `ModeRail`. Two road strokes, the second on the `RISK_COLOR` gradient, cover the screen → `router.push` → draw off when the pathname changes; 6 s fallback uncovers if navigation fails; skipped under reduced motion. Checked headless: cover → `/max` → curtain → reveal, full-cover frame is opaque. |
+| Curtain | `src/components/shell/Curtain.tsx`: wraps the loading screens of `/simple`, `/max` and `/control-room` (ops keeps its boot screen inside it) and lifts with a flattening curved edge when the data is actually ready, never on a timer. |
+| State | **Off for now at Devesh's request**: `MOTION_ON = false` in `RouteTransition.tsx`. Off = instant navigation and the plain loading screens, as before. Set it to `true` to turn both back on. tsc, eslint, 59 vitest pass. |
+
+## Detailed basemap, light/dark everywhere, realistic buildings, Google option (2026-10-28)
+
+| Piece | Evidence |
+|---|---|
+| Basemap | `src/lib/basemap/`: OpenFreeMap "liberty" layers (vendored, MIT) in every mode: water, rivers, parks, land use, road hierarchy, rail, building footprints, road shields, POIs, English + Tamil names. Free, no key. Dark mode repaints the same layers in the app's navy palette. App layers sit under the basemap names; basemap labels that repeat the app's own place names are filtered out. Replaces the CARTO raster (unreachable here). |
+| Light/dark | One switch in the mode rail (sun/moon, under the modes), stored in `localStorage` `rp-theme`, OS setting until chosen; an inline script sets `<html data-theme>` before first paint (no flash). Max, Control room and Simple each have both palettes as CSS variables; maps repaint in place (no reload, routes and state kept). Band colours have a darker set for light backgrounds (`bandHex`). |
+| Buildings | Five facade tones varied per building, a lighter roof cap, a low south-west sun (`setLight`), vertical gradient; light and dark versions. |
+| Google (control room) | `src/lib/basemap/google.ts`: Google Map Tiles API roadmap + live traffic as a raster under the app layers, night style in dark, Google credit line from the viewport API. **Inactive until `NEXT_PUBLIC_GOOGLE_MAPS_KEY` is set** (Map Tiles API + billing; restrict the key to your domains). Not yet tested against a real key. **Skipped for now (Devesh, 2026-10-28): no key, control room stays on the free basemap.** |
+| Checks | `scripts/shots.mjs` screenshots every mode × theme (headless Edge, no console errors); live toggle repaints Max to light; `verify-ui.mjs` ALL UI CHECKS PASSED; tsc, eslint, 59 vitest pass. |
+
+## Mode-switch crashes fixed (2026-10-29)
+
+| Piece | Evidence |
+|---|---|
+| Root cause | `cacheComponents: true` makes Next keep up to 3 visited pages alive but hidden (`<Activity>`): hiding runs effect cleanups (the map is removed), showing re-runs effects (a new map). The map components assumed one map per mount. |
+| Fixes | Street colours reset with `setFeatureState`, never `removeFeatureState` (MapLibre 5 throws when a removed feature is set again before a frame). Map effects keyed on the map instance, not a `ready` boolean, so a rebuilt map is recoloured; theme read when the map is built; Drive and the Google layer skip a removed map; Simple's pins and route fit reset with the map. |
+| Checks | Headless repro (drive in Max, fast switches, theme flips mid-load) went from "This page couldn't load" to no errors. `verify-ui` gained two checks: leave Max mid-drive + fast switches with theme flips, and back in Max the streets are coloured in the current theme (failed before the fix). ALL UI CHECKS PASSED; tsc, eslint, 59 vitest pass. |
+| Follow-ups (done) | verify-ui's contrast check now tests the risk-band colours the map draws (`BANDS` dark, `BAND_LIGHT` light) against the basemap land colour: light min 3.94:1 on #f8f4f0, dark min 5.67:1 on #0b1520. The unused palettes and `src/lib/style.ts` are gone. Each time slider gets its own id (`useId`), and tests find the visible one by `data-testid="hour"`. |

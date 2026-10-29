@@ -3,16 +3,17 @@
 // Control-room view: the same street simulation as `/`, laid out as an operations console.
 // Every number on screen is read from the bundle (streets, per-step state, rain); nothing is invented here.
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { hourDate, hourLabel, type ScenarioData, type StaticBundle } from "@/lib/bundle";
 import { useStreetSim } from "@/lib/useStreetSim";
+import { useDark } from "@/lib/useDark";
 import {
-  BANDS, bandOf, lowLyingLabel, nearestNode, PLACES, route,
+  BANDS, bandHex, bandOf, lowLyingLabel, nearestNode, PLACES, route,
   streetName, streetRain, type Band, type Route, type RouteKind, type StepState, type Streets, type StreetScenario,
 } from "@/lib/streets";
 import { metres } from "@/lib/geo";
 import Scrubber from "../Scrubber";
+import Curtain from "../shell/Curtain";
 import StreetMap, { type Layers } from "../street/StreetMap";
 import "../street/street.css";
 import "./ops.css";
@@ -41,10 +42,11 @@ const point = (id: string): [number, number] => { const pl = PLACES.find((p) => 
 type Event = { hour: number; kind: "closed" | "reopened" | "summary"; text: string; street?: number };
 
 export default function OpsConsole() {
+  const dark = useDark();
   const [scenario, setScenario] = useState("SC04");
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 4>(1);
-  const [layers, setLayers] = useState<Layers>({ risk: true, rain: false, water: true, closures: true });
+  const [layers, setLayers] = useState<Layers>({ risk: true, rain: false, water: true, closures: true, buildings: false });
   const [from, setFrom] = useState("anna-nagar");
   const [to, setTo] = useState("marina");
   const [activeRoute, setActiveRoute] = useState(0);
@@ -198,16 +200,17 @@ export default function OpsConsole() {
   }, [picked, threats]);
 
   if (error) return <main className="ops-fatal" role="alert"><h1>FEED LOST</h1><p>Could not load the street simulation: {error}</p></main>;
-  if (!bundle || !streets || !graph) {
-    return (
-      <main className="ops-boot" aria-busy="true">
+  const curtain = (ready: boolean) => (
+    <Curtain ready={ready} bg={dark ? "#03060a" : "#e9eef3"} fg={dark ? "#d6e2ee" : "#0f1b27"}>
+      <div className="ops-boot">
         <div className="ops-boot-mark">ROUTEPULSE <span>{"//"}</span> OPS</div>
         <div className="ops-boot-bar"><i /></div>
         <p>Linking 80,905 Chennai street segments…</p>
         <small>Simulated exercise · synthetic data</small>
-      </main>
-    );
-  }
+      </div>
+    </Curtain>
+  );
+  if (!bundle || !streets || !graph) return <>{curtain(false)}</>;
 
   const m = bundle.manifest;
   const sc = bundle.scenarios.find((s) => s.id === scenario)!;
@@ -222,7 +225,7 @@ export default function OpsConsole() {
   const cond = stats?.cond ?? CONDITIONS[4];
 
   return (
-    <div className={`ops tone-${cond.tone}`}>
+    <>{curtain(true)}<div className={`ops tone-${cond.tone}`}>
       <div className="ops-banner" role="note">
         <span className="ops-banner-dot" aria-hidden="true" />
         SIMULATED EXERCISE · every value on this console is synthetic · not a real-world forecast or live feed
@@ -231,7 +234,7 @@ export default function OpsConsole() {
       <header className="ops-top">
         <div className="ops-brand">
           <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M2 14h5l3-8 5 15 3-9h6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" /></svg>
-          <div><b>ROUTEPULSE</b><span>Flood Operations Console · Chennai</span></div>
+          <div><b>ROUTEPULSE</b><span>Control Room · Chennai</span></div>
         </div>
         <div className={`ops-condition c-${cond.tone}`} role="status" aria-label={`Network condition ${cond.level}, ${cond.name}`}
              title="Display bands by share of streets closed now: 1 ≥ 10 %, 2 ≥ 3 %, 3 ≥ 0.5 %, 4 any closure, 5 none. Not an official alert standard.">
@@ -258,11 +261,6 @@ export default function OpsConsole() {
             {bundle.scenarios.map((s) => <option key={s.id} value={s.id}>{s.id} · {s.name}</option>)}
           </select>
         </label>
-        <nav className="ops-nav" aria-label="View">
-          <Link href="/">Street view</Link>
-          <Link href="/corridors">Corridors</Link>
-          <Link href="/ops" aria-current="page" className="on">Ops</Link>
-        </nav>
       </header>
 
       <section className="ops-kpis" aria-label="Network figures at the selected hour">
@@ -291,8 +289,8 @@ export default function OpsConsole() {
                         <b>{t.name}</b>
                         <small>{t.closedKm ? `${t.closedKm.toFixed(1)} km closed` : `${t.riskKm.toFixed(1)} km at risk`} · {streets.meta.classes[t.cls]} · {t.depth} cm</small>
                       </span>
-                      <span className="ops-pct" style={{ color: band.color }}>{t.p < 0 ? "–" : `${t.p}%`}</span>
-                      <span className="ops-meter" aria-hidden="true"><i style={{ width: `${Math.max(t.p, 0)}%`, background: band.color }} /></span>
+                      <span className="ops-pct" style={{ color: bandHex(band, dark) }}>{t.p < 0 ? "–" : `${t.p}%`}</span>
+                      <span className="ops-meter" aria-hidden="true"><i style={{ width: `${Math.max(t.p, 0)}%`, background: bandHex(band, dark) }} /></span>
                     </button>
                   </li>
                 );
@@ -317,7 +315,7 @@ export default function OpsConsole() {
           <div className="ops-mapframe">
             <StreetMap streets={streets} network={bundle.network} state={state} rainData={rainData} hour={h}
                        layers={layers} bands={ALL_BANDS} routes={routes} activeRoute={activeRoute}
-                       selected={selected} onSelect={setPicked} endpoints={ends} me={null} follow={false} />
+                       selected={selected} onSelect={setPicked} endpoints={ends} me={null} follow={false} dark={dark} google />
             <span className="ops-corner tl" aria-hidden="true" /><span className="ops-corner tr" aria-hidden="true" />
             <span className="ops-corner bl" aria-hidden="true" /><span className="ops-corner br" aria-hidden="true" />
             <div className="ops-hud ops-hud-tl" aria-hidden="true">
@@ -332,7 +330,7 @@ export default function OpsConsole() {
               ))}
             </div>
             <div className="ops-legend" aria-label="Legend">
-              {BANDS.slice(0, 4).map((b) => <span key={b.id}><i style={{ background: b.color }} />{b.label}</span>)}
+              {BANDS.slice(0, 4).map((b) => <span key={b.id}><i style={{ background: bandHex(b, dark) }} />{b.label}</span>)}
               <span><i className="dash" />Closed</span>
             </div>
           </div>
@@ -374,7 +372,7 @@ export default function OpsConsole() {
                         <span className="ops-route-code">{meta.code}</span>
                         <span className="ops-route-main"><b>{meta.title}</b><small>{r.km.toFixed(1)} km · {r.unestimatedKm >= r.km - 1e-9 ? "risk: no estimate" : `max ${r.maxP}%`} · {r.deepestCm} cm</small></span>
                         <span className="ops-route-eta">{Math.round(r.minutes)}<small>min</small></span>
-                        <span className="ops-meter" aria-hidden="true"><i style={{ width: `${Math.min(r.meanP, 100)}%`, background: BANDS.find((b) => b.id === bandOf(Math.round(r.meanP)))!.color }} /></span>
+                        <span className="ops-meter" aria-hidden="true"><i style={{ width: `${Math.min(r.meanP, 100)}%`, background: bandHex(BANDS.find((b) => b.id === bandOf(Math.round(r.meanP)))!, dark) }} /></span>
                       </button>
                     );
                   })}
@@ -403,7 +401,7 @@ export default function OpsConsole() {
         <span>Condition = display bands on share of streets closed (1 ≥ 10 %, 2 ≥ 3 %, 3 ≥ 0.5 %, 4 any), not an official standard</span>
         <span>Street geometry {streets.meta.attribution} · conditions update every 3 simulated hours · synthetic data</span>
       </footer>
-    </div>
+    </div></>
   );
 }
 
@@ -448,6 +446,7 @@ function RiskBar({ stats }: { stats: { vh: number; high: number; med: number } |
 function Target({ streets, i, state, sim, rain, hour, manifest }: {
   streets: Streets; i: number; state: StepState; sim: StreetScenario; rain: ScenarioData | null; hour: number; manifest: StaticBundle["manifest"];
 }) {
+  const dark = useDark();
   const p = state.p[i];
   const band = BANDS.find((b) => b.id === bandOf(p))!;
   const step = sim.stepOf(hour);
@@ -460,16 +459,16 @@ function Target({ streets, i, state, sim, rain, hour, manifest }: {
   return (
     <div className="ops-target" data-testid="ops-target" data-street={i} data-p={p}>
       <div className="ops-target-head">
-        <i style={{ background: band.color }} aria-hidden="true" />
+        <i style={{ background: bandHex(band, dark) }} aria-hidden="true" />
         <div><b>{streetName(streets, i) ?? "Unnamed street"}</b><small>{cls} road{tunnel ? " · underpass" : bridge ? " · bridge" : ""}</small></div>
         <span className={`ops-state ${closed ? "closed" : "open"}`}>{closed ? "CLOSED" : "OPEN"}</span>
       </div>
-      <div className="ops-gauge" style={{ ["--p" as string]: p === 255 ? 0 : p, ["--c" as string]: band.color }}>
+      <div className="ops-gauge" style={{ ["--p" as string]: p === 255 ? 0 : p, ["--c" as string]: bandHex(band, dark) }}>
         <div className="ops-gauge-ring" aria-hidden="true" />
         <div className="ops-gauge-val"><b>{p === 255 ? "–" : `${p}%`}</b><small>closure risk at {hourLabel(manifest, Math.min(step * 3 + 3, manifest.hours - 1)).split(", ").pop()}</small></div>
       </div>
       <dl className="ops-telemetry">
-        <div><dt>Band</dt><dd style={{ color: band.color }}>{band.label}</dd></div>
+        <div><dt>Band</dt><dd style={{ color: bandHex(band, dark) }}>{band.label}</dd></div>
         <div><dt>Water now</dt><dd>{state.depth[i]} cm</dd></div>
         <div><dt>Rain this hour</dt><dd>{rainNow.toFixed(1)} mm</dd></div>
         <div><dt>Forecast 3 h</dt><dd>{fcst.toFixed(1)} mm</dd></div>

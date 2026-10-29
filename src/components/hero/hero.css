@@ -1,0 +1,69 @@
+/* Landing page over a live 3D drive. Text sits on a left scrim so it keeps 4.5:1 contrast whatever the map shows. */
+.hero {
+  position: relative; height: 100dvh; min-height: 620px; overflow: hidden; background: #0a121c; color: #e8f0fa; color-scheme: dark;
+  font-family: var(--font-geist-sans), -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+/* two classes so it beats maplibre-gl.css's .maplibregl-map { position: relative } whatever order the CSS loads in */
+.hero-map, .hero-map.maplibregl-map { position: absolute; inset: 0; }
+.hero-scrim {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(6, 12, 20, 0.92) 0%, rgba(6, 12, 20, 0.78) 34%, rgba(6, 12, 20, 0.15) 62%, rgba(6, 12, 20, 0) 75%),
+    linear-gradient(180deg, rgba(6, 12, 20, 0.6) 0%, rgba(6, 12, 20, 0) 18%, rgba(6, 12, 20, 0) 80%, rgba(6, 12, 20, 0.75) 100%);
+}
+.hero a { color: inherit; }
+.hero :focus-visible { outline: 2px solid #3d9bff; outline-offset: 3px; }
+
+.hero-top { position: relative; z-index: 2; display: flex; align-items: center; gap: 14px; padding: 18px 32px; flex-wrap: wrap; }
+.hero-brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; text-decoration: none; }
+.hero-logo { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: #3d9bff; color: #06111d; }
+.hero-pill { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #ffd37a; background: rgba(42, 30, 10, 0.85); border: 1px solid #8a6424; border-radius: 99px; padding: 4px 10px; }
+.hero-nav { margin-left: auto; display: flex; gap: 4px; }
+.hero-nav a { text-decoration: none; font-size: 14px; font-weight: 600; padding: 10px 14px; border-radius: 10px; color: #c7d5e5; }
+.hero-nav a:hover { color: #fff; background: rgba(61, 155, 255, 0.14); }
+
+.hero-main { position: relative; z-index: 2; max-width: 640px; padding: 6vh 32px 0; }
+.hero-kicker { margin: 0 0 14px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #7fc0ff; }
+.hero h1 { margin: 0; font-size: clamp(34px, 4.6vw, 58px); line-height: 1.04; letter-spacing: -0.035em; font-weight: 750; }
+.hero h1 span { display: block; background: linear-gradient(90deg, #5cc8ff, #3d9bff 60%, #8f8bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero-lede { margin: 18px 0 0; max-width: 52ch; font-size: 17px; line-height: 1.55; color: #c3d1e0; }
+
+.hero-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 30px; max-width: 720px; }
+.hero-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 16px; min-height: 196px; border-radius: 16px; text-decoration: none;
+  background: rgba(13, 25, 40, 0.82); border: 1px solid rgba(125, 187, 255, 0.22); backdrop-filter: blur(12px);
+  transition: border-color 0.2s ease-out, background 0.2s ease-out, transform 0.2s ease-out;
+}
+.hero-card:hover { border-color: #3d9bff; background: rgba(16, 36, 60, 0.9); transform: translateY(-2px); }
+.hero-card-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(61, 155, 255, 0.16); color: #7dbbff; margin-bottom: 4px; }
+.hero-card-who { font-size: 12px; font-weight: 600; color: #8fb3d9; text-transform: uppercase; letter-spacing: 0.05em; }
+.hero-card b { font-size: 18px; }
+.hero-card-text { font-size: 14px; line-height: 1.45; color: #b9c8d8; flex: 1; }
+.hero-card-go { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #7dbbff; }
+
+.hero-pause {
+  position: absolute; z-index: 3; right: 24px; bottom: 64px; display: inline-flex; align-items: center; gap: 8px; min-height: 40px;
+  padding: 0 14px; border-radius: 99px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  color: #e8f0fa; background: rgba(8, 18, 29, 0.85); border: 1px solid rgba(125, 187, 255, 0.35);
+}
+.hero-pause:hover:not(:disabled) { border-color: #3d9bff; }
+.hero-pause:disabled { opacity: 0.6; cursor: default; }
+.hero-credits {
+  position: absolute; z-index: 3; left: 32px; right: 220px; bottom: 16px; font-size: 11.5px; line-height: 1.5; color: #9fb2c6;
+}
+.hero .maplibregl-ctrl-attrib { background: rgba(8, 18, 29, 0.75); color: #9fb2c6; }
+.hero .maplibregl-ctrl-attrib a { color: #c7d5e5; }
+
+@media (max-width: 900px) {
+  .hero { height: auto; min-height: 100dvh; }
+  .hero-map { position: fixed; }
+  .hero-scrim { position: fixed; background: rgba(6, 12, 20, 0.72); }
+  .hero-top { padding: 14px 16px; }
+  .hero-nav { display: none; }
+  .hero-main { padding: 28px 16px 0; }
+  .hero-modes { grid-template-columns: 1fr; }
+  .hero-card { min-height: 0; }
+  .hero-pause { position: relative; right: auto; bottom: auto; margin: 20px 16px 0; }
+  .hero-credits { position: relative; left: auto; right: auto; bottom: auto; padding: 16px 16px 24px; }
+}
+@media (prefers-reduced-motion: reduce) { .hero-card { transition: none; } .hero-card:hover { transform: none; } }

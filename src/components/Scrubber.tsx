@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useId, useMemo, useRef } from "react";
 import type { Manifest, ScenarioData } from "@/lib/bundle";
 import { hourLabel } from "@/lib/bundle";
 
@@ -21,6 +21,8 @@ const HOURS_PER_SEC = 2; // at 1×
 
 export default function Scrubber({ manifest, data, series, seriesLabel = "segments", hour, setHour, playing, setPlaying, speed, setSpeed }: Props) {
   const last = manifest.hours - 1;
+  // unique per slider: Max and the control room can both be in the page (Next keeps visited pages hidden)
+  const sliderId = useId();
 
   // playback: advance on a timer; stops at the end rather than looping
   const raf = useRef<number | null>(null);
@@ -74,7 +76,7 @@ export default function Scrubber({ manifest, data, series, seriesLabel = "segmen
                     aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>
           ))}
         </div>
-        <output className="time" htmlFor="hour" aria-live="off">
+        <output className="time" htmlFor={sliderId} aria-live="off">
           <strong>{hourLabel(manifest, hour)}</strong>
           <span className="muted"> · hour {hour} of {last}</span>
         </output>
@@ -91,7 +93,7 @@ export default function Scrubber({ manifest, data, series, seriesLabel = "segmen
             <path d={path} className="spark-line" vectorEffect="non-scaling-stroke" />
           </svg>
         )}
-        <input id="hour" type="range" min={0} max={last} step={1} value={hour}
+        <input id={sliderId} data-testid="hour" type="range" min={0} max={last} step={1} value={hour}
                onChange={(e) => { setPlaying(false); setHour(Number(e.target.value)); }}
                aria-label="Simulated hour"
                aria-valuetext={`${hourLabel(manifest, hour)}${closed ? `, ${closed[hour]} ${seriesLabel} closed` : ""}`} />

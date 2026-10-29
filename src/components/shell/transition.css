@@ -1,0 +1,19 @@
+/* Mode-switch stroke transition (RouteTransition.tsx) and the loading curtain (Curtain.tsx). */
+.rp-transition {
+  position: fixed; top: 50%; left: 50%; width: 100%; height: 100%; z-index: 1000; pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.5); visibility: hidden;
+}
+.rp-transition[data-on] { visibility: visible; pointer-events: auto; }
+.rp-transition svg { width: 100%; height: 100%; display: block; }
+.rp-transition path { stroke-dasharray: 99999; stroke-dashoffset: 99999; }
+
+.rp-curtain {
+  position: fixed; inset: 0; z-index: 900; display: grid; place-items: center;
+  background: var(--curtain-bg); color: var(--curtain-fg);
+}
+.rp-curtain-edge { position: absolute; left: 0; top: 100%; width: 100%; height: 300px; overflow: visible; }
+.rp-curtain-edge path { fill: var(--curtain-bg); }
+.rp-curtain-body { transition: opacity 0.3s ease; }
+.rp-curtain[data-lift] .rp-curtain-body { opacity: 0; }
+.rp-curtain-row { display: grid; justify-items: center; gap: 10px; font-size: 14px; }
+.rp-curtain .sv-loading, .rp-curtain .ops-boot { background: transparent; color: inherit; min-height: 0; }

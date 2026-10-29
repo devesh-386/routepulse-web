@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
-  buildGraph, nearestNode, PLACES, route, StreetScenario, streetMinutes,
+  buildGraph, nearestNode, PLACES, route, StreetScenario, streetMinutes, VEHICLES,
   type Graph, type Streets, type StreetsMeta,
 } from "./streets";
 
@@ -84,6 +84,19 @@ describe("routing", () => {
       at = at === u ? v : u;
     }
     expect(at).toBe(b);
+  });
+
+  it("keeps each vehicle out of water deeper than its limit, and buses off minor streets", () => {
+    const st = sc.state(Math.max(0, peakStep() - 1));
+    const a = nearestNode(g, place("guindy").lon, place("guindy").lat);
+    const b = nearestNode(g, place("central").lon, place("central").lat);
+    for (const v of VEHICLES) {
+      const r = route("fastest", s, g, st, a, b, v);
+      if (!r) continue;
+      expect(r.streets.every((i) => st.depth[i] < v.maxDepthCm)).toBe(true);
+      if (v.mainRoadsOnly) expect(r.streets.every((i) => s.cls[i] !== 4)).toBe(true);
+      expect(r.baseMinutes).toBeLessThanOrEqual(r.minutes + 1e-9);
+    }
   });
 });
 

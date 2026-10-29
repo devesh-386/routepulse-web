@@ -1,0 +1,43 @@
+/* Shared mode shell: a 72 px rail (RoutePulse v2.0 simple-planner layout) beside the page. */
+.rp-shell { display: grid; grid-template-columns: 72px minmax(0, 1fr); height: 100dvh; }
+.rp-shell > .rp-main { min-width: 0; min-height: 0; }
+
+.rp-rail {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; overflow-y: auto;
+  scrollbar-width: none;
+}
+.rp-rail-light { background: rgba(255, 255, 255, 0.78); border-right: 1px solid rgba(20, 24, 40, 0.09); color: #0f1115; backdrop-filter: blur(16px); }
+.rp-rail-dark { background: #091420; border-right: 1px solid #1c3043; color: #c3d1df; }
+.rp-logo {
+  width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 10px; flex: none;
+  text-decoration: none;
+}
+.rp-rail-light .rp-logo { background: #0f1115; color: #fff; }
+.rp-rail-dark .rp-logo { background: #3d9bff; color: #06111d; }
+.rp-rail-modes { display: flex; flex-direction: column; gap: 6px; }
+.rp-tool {
+  width: 58px; min-height: 52px; border-radius: 14px; border: 0; background: none; color: inherit; cursor: pointer;
+  display: grid; place-items: center; align-content: center; gap: 3px; padding: 6px 0; text-decoration: none;
+  font: inherit; transition: background 0.15s, color 0.15s;
+}
+.rp-tool small { font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; line-height: 1; }
+.rp-rail-light .rp-tool:hover { background: rgba(20, 24, 40, 0.06); }
+.rp-rail-light .rp-tool.on { background: #0f1115; color: #fff; }
+.rp-rail-dark .rp-tool:hover { background: rgba(61, 155, 255, 0.1); color: #e5edf6; }
+.rp-rail-dark .rp-tool.on { background: rgba(61, 155, 255, 0.18); color: #fff; box-shadow: inset 0 0 0 1px #3d9bff; }
+.rp-tool:focus-visible { outline: 2px solid #3d9bff; outline-offset: 2px; }
+.rp-theme { flex: none; margin-top: 6px; }
+.rp-rail-sep { width: 32px; height: 1px; margin: 6px 0; background: currentColor; opacity: 0.15; flex: none; }
+
+@media (max-width: 900px) {
+  .rp-shell { display: flex; flex-direction: column; height: auto; min-height: 100dvh; }
+  .rp-rail { flex-direction: row; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; position: sticky; top: 0; z-index: 50; }
+  .rp-rail-light { border-right: 0; border-bottom: 1px solid rgba(20, 24, 40, 0.09); }
+  .rp-rail-dark { border-right: 0; border-bottom: 1px solid #1c3043; }
+  .rp-logo { margin: 0 6px 0 0; width: 38px; height: 38px; }
+  .rp-rail-modes { flex-direction: row; }
+  .rp-tool { min-height: 48px; width: 56px; }
+  .rp-theme { margin: 0 0 0 6px; }
+  .rp-rail-sep { width: 1px; height: 28px; margin: 0 4px; }
+}
+@media (prefers-reduced-motion: reduce) { .rp-tool { transition: none; } }

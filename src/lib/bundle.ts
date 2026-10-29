@@ -227,3 +227,15 @@ export function hourLabel(manifest: Manifest, hour: number) {
   const time = `${String(d.getUTCHours()).padStart(2, "0")}:00`;
   return `${day}, ${time}`;
 }
+
+// the rain grid as square polygons, feature id = cell index
+export function gridGeoJSON(net: Network): GeoJSON.FeatureCollection {
+  const h = net.grid.cell_size_deg / 2;
+  return {
+    type: "FeatureCollection",
+    features: net.grid.cells.map(([x, y], i) => ({
+      type: "Feature", id: i, properties: {},
+      geometry: { type: "Polygon", coordinates: [[[x - h, y - h], [x + h, y - h], [x + h, y + h], [x - h, y + h], [x - h, y - h]]] },
+    })),
+  };
+}

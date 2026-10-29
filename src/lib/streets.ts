@@ -179,6 +179,9 @@ export const BANDS: { id: Band; label: string; range: string; color: string }[] 
   { id: "low", label: "Low", range: "< 10 %", color: "#3fbf78" },
   { id: "none", label: "No estimate", range: "last 3 h", color: "#8193a8" },
 ];
+/** Darker band colours for light backgrounds (the map and panels in light mode), same order as BANDS. */
+const BAND_LIGHT: Record<Band, string> = { very_high: "#c8102e", high: "#c95400", medium: "#9a7400", low: "#2f7a3e", none: "#6b7889" };
+export const bandHex = (b: { id: Band; color: string }, dark: boolean) => (dark ? b.color : BAND_LIGHT[b.id]);
 export const BAND_CODE: Record<Band, number> = { very_high: 4, high: 3, medium: 2, low: 1, none: 0 };
 
 export function bandOf(p: number): Band {
@@ -284,10 +287,20 @@ export function nearestNode(g: Graph, lon: number, lat: number) {
 
 export type RouteKind = "fastest" | "safer" | "shortest";
 
+// Vehicle limits from the v2.0 planner's profiles (config/vehicles.json): illustrative, not safety standards.
+export interface Vehicle { id: string; label: string; maxDepthCm: number; mainRoadsOnly: boolean; speed: number }
+export const VEHICLES: Vehicle[] = [
+  { id: "car", label: "Car", maxDepthCm: 20, mainRoadsOnly: false, speed: 1 },
+  { id: "motorcycle", label: "Motorcycle or scooter", maxDepthCm: 12, mainRoadsOnly: false, speed: 1 },
+  { id: "bus", label: "Bus (generic)", maxDepthCm: 30, mainRoadsOnly: true, speed: 0.8 },
+];
+const MINOR = 4;
+
 export interface Route {
   kind: RouteKind;
   streets: number[];
   minutes: number;
+  baseMinutes: number;   // the same path on dry, empty roads
   km: number;
   maxP: number;          // highest P(closed +3 h) on the route, %
   meanP: number;         // length-weighted, %
@@ -295,15 +308,16 @@ export interface Route {
   unestimatedKm: number; // length with no +3 h estimate; maxP and meanP cover only the rest
 }
 
-/** Travel time on one street now, in minutes, or Infinity if it is closed. */
-export function streetMinutes(s: Streets, st: StepState, i: number) {
+/** Travel time on one street now, in minutes, or Infinity if it is closed (or too deep or off-limits for the vehicle). */
+export function streetMinutes(s: Streets, st: StepState, i: number, v?: Vehicle) {
   if (st.status[i] >= 3) return Infinity;
-  const kph = s.meta.free_kph[s.cls[i]] * Math.min(1, Math.max(0.22, 1 - 0.015 * st.depth[i]));
+  if (v && (st.depth[i] >= v.maxDepthCm || (v.mainRoadsOnly && s.cls[i] === MINOR))) return Infinity;
+  const kph = s.meta.free_kph[s.cls[i]] * (v?.speed ?? 1) * Math.min(1, Math.max(0.22, 1 - 0.015 * st.depth[i]));
   return (s.lengthDm[i] / 10000) / kph * 60;
 }
 
-function edgeCost(kind: RouteKind, s: Streets, st: StepState, i: number) {
-  const t = streetMinutes(s, st, i);
+function edgeCost(kind: RouteKind, s: Streets, st: StepState, i: number, v?: Vehicle) {
+  const t = streetMinutes(s, st, i, v);
   if (!Number.isFinite(t)) return Infinity;
   if (kind === "shortest") return s.lengthDm[i];
   if (kind === "fastest") return t;
@@ -312,7 +326,7 @@ function edgeCost(kind: RouteKind, s: Streets, st: StepState, i: number) {
   return t * (1 + 6 * p + (st.depth[i] > 8 ? 2 : 0));
 }
 
-export function route(kind: RouteKind, s: Streets, g: Graph, st: StepState, from: number, to: number): Route | null {
+export function route(kind: RouteKind, s: Streets, g: Graph, st: StepState, from: number, to: number, veh?: Vehicle): Route | null {
   const N = g.mainComponent.length;
   const dist = new Float64Array(N).fill(Infinity);
   const via = new Int32Array(N).fill(-1);
@@ -356,7 +370,7 @@ export function route(kind: RouteKind, s: Streets, g: Graph, st: StepState, from
     if (c > dist[v]) continue;
     if (v === to) break;
     for (let e = g.adjStart[v]; e < g.adjStart[v + 1]; e++) {
-      const w = edgeCost(kind, s, st, g.adjEdge[e]);
+      const w = edgeCost(kind, s, st, g.adjEdge[e], veh);
       if (!Number.isFinite(w)) continue;
       const nc = c + w, y = g.adjTo[e];
       if (nc < dist[y]) { dist[y] = nc; via[y] = e; push(nc, y); }
@@ -371,16 +385,17 @@ export function route(kind: RouteKind, s: Streets, g: Graph, st: StepState, from
     v = g.adjForward[e] ? g.nodeOfEnd[2 * i] : g.nodeOfEnd[2 * i + 1];
   }
   streets.reverse();
-  let minutes = 0, km = 0, maxP = 0, pSum = 0, deepest = 0, unknown = 0;
+  let minutes = 0, baseMinutes = 0, km = 0, maxP = 0, pSum = 0, deepest = 0, unknown = 0;
   for (const i of streets) {
     const len = s.lengthDm[i] / 10000;
-    minutes += streetMinutes(s, st, i); km += len; deepest = Math.max(deepest, st.depth[i]);
+    minutes += streetMinutes(s, st, i, veh); km += len; deepest = Math.max(deepest, st.depth[i]);
+    baseMinutes += len / (s.meta.free_kph[s.cls[i]] * (veh?.speed ?? 1)) * 60;
     // a missing estimate is unknown, not 0 %: keep it out of the risk figures and report it separately
     if (st.p[i] === NO_FORECAST) { unknown += len; continue; }
     maxP = Math.max(maxP, st.p[i]); pSum += st.p[i] * len;
   }
   const known = km - unknown;
-  return { kind, streets, minutes, km, maxP, meanP: known > 1e-9 ? pSum / known : 0, deepestCm: deepest, unestimatedKm: unknown };
+  return { kind, streets, minutes, baseMinutes, km, maxP, meanP: known > 1e-9 ? pSum / known : 0, deepestCm: deepest, unestimatedKm: unknown };
 }
 
 // ---------------------------------------------------------------- places
